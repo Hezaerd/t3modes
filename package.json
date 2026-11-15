@@ -6,7 +6,7 @@
     "build": "vp pack"
   },
   "devDependencies": {
-    "@t3mode/plugin-sdk": "file:vendor/t3mode-plugin-sdk-1.0.0.tgz",
+    "@t3mode/plugin-sdk": "^1.0.0",
     "vite-plus": "1.4.0"
   }
 }

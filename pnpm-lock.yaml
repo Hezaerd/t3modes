@@ -9,8 +9,8 @@ importers:
   .:
     devDependencies:
       '@t3mode/plugin-sdk':
-        specifier: file:vendor/t3mode-plugin-sdk-1.0.0.tgz
-        version: file:vendor/t3mode-plugin-sdk-1.0.0.tgz
+        specifier: ^1.0.0
+        version: 1.0.0
       vite-plus:
         specifier: 1.4.0
         version: 1.4.0(@vitest/ui@5.0.5)
@@ -330,9 +330,8 @@ packages:
   '@polka/url@1.0.0-next.29':
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
 
-  '@t3mode/plugin-sdk@file:vendor/t3mode-plugin-sdk-1.0.0.tgz':
-    resolution: {integrity: sha512-KNJvi3aICU5i64IDe43ki7aBa+2cY/pGfuSDS/xH9/e6qeWsQ6Ib6W6g8q1XvHxBvcw8Z9lDNS/cy28cNU60Qg==, tarball: file:vendor/t3mode-plugin-sdk-1.0.0.tgz}
-    version: 1.0.0
+  '@t3mode/plugin-sdk@1.0.0':
+    resolution: {integrity: sha512-KNJvi3aICU5i64IDe43ki7aBa+2cY/pGfuSDS/xH9/e6qeWsQ6Ib6W6g8q1XvHxBvcw8Z9lDNS/cy28cNU60Qg==}
 
   '@testing-library/dom@10.4.2':
     resolution: {integrity: sha512-yzr2S9HyAIdhz2/6qHgbs665Q7PKVcDF05vsOlHPxG1mo36gKVesdYVeDLnXgfjJ03CrKRk08knc6+E/9m8v2Q==}
@@ -1082,7 +1081,7 @@ snapshots:
 
   '@polka/url@1.0.0-next.29': {}
 
-  '@t3mode/plugin-sdk@file:vendor/t3mode-plugin-sdk-1.0.0.tgz': {}
+  '@t3mode/plugin-sdk@1.0.0': {}
 
   '@testing-library/dom@10.4.2':
     dependencies:

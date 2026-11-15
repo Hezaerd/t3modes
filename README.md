@@ -8,17 +8,6 @@ Edit `manifest.json`. The `id` is lowercase letters, digits and hyphens, and mus
 
 Write the plugin in `src/index.ts`. `definePlugin` and the API types come from `@t3mode/plugin-sdk`. Read the plugin rules in t3mode's `docs/architecture.md` first. Do the plugin's work in `start`, through the API, so turning the plugin off undoes it. t3mode runs none of a plugin's code while it is off.
 
-Until the SDK is on npm, install it from a tarball:
-
-```sh
-# in the t3mode repo
-cd packages/plugin-sdk && pnpm pack
-# in your plugin
-pnpm add -D ../t3mode/packages/plugin-sdk/t3mode-plugin-sdk-1.0.0.tgz
-```
-
-Commit the tarball inside your repository and point `package.json` at it, so the release workflow can install it.
-
 ## Build and try it
 
 ```sh

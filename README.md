@@ -20,10 +20,4 @@ After each build, reload T3 Code with Ctrl+R.
 
 ## Release
 
-Commit `pnpm-lock.yaml`. Then bump `version` in `manifest.json`, commit, and push a matching tag:
-
-```sh
-git tag v1.0.1 && git push origin v1.0.1
-```
-
-The workflow in `.github/workflows/release.yml` builds the plugin and attaches both files to a GitHub release. Anyone can then install it from the Plugins page, or with `pnpm t3mode plugin add <owner>/<repo>`.
+Commit `pnpm-lock.yaml`. To release, bump `version` in `manifest.json` and push to `main`. The workflow in `.github/workflows/release.yml` sees that no release has that version yet, builds the plugin, and publishes release `v<version>` with both files. Anyone can then install it from the Plugins page, or with `pnpm t3mode plugin add <owner>/<repo>`.

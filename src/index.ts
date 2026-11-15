@@ -1,4 +1,4 @@
-// Prompt shelf: a durable library of prompt snippets, kept in the plugin's data file. A "Shelf"
+// Prompt shelf: a durable library of prompt snippets, kept in the plugin's storage file. A "Shelf"
 // tab sits on the composer next to T3 Code's Stash and opens a drawer like the Stash's, where a
 // snippet goes in at the caret with one key. Stash holds drafts for a while; the shelf keeps
 // prompts for good. Snippets are edited and imported on the plugin's settings page.
@@ -26,8 +26,11 @@ import {
   updateSnippet,
 } from "./shelf.ts";
 
+/** Where api.storage keeps the shelf, for messages. */
+const FILE = "<t3mode home>/plugin-data/prompt-shelf.json";
+const SHELF_KEY = "shelf";
+
 type Store =
-  | { readonly kind: "loading" }
   | { readonly kind: "ready"; readonly shelf: Shelf }
   | { readonly kind: "unreadable"; readonly reason: string };
 
@@ -82,12 +85,6 @@ const CSS = `
 [${ATTR}=panel] .shelf-path { font-family: var(--font-mono, ui-monospace, monospace); word-break: break-all; }
 `;
 
-/** An error's message, without the "Error invoking remote method …:" Electron puts before main's. */
-const describe = (error: unknown) =>
-  (error instanceof Error ? error.message : String(error)).replace(
-    /^Error invoking remote method '[^']*': (?:\w+: )?/,
-    "",
-  );
 const plural = (count: number, word: string) => `${count} ${word}${count === 1 ? "" : "s"}`;
 const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
 
@@ -119,50 +116,33 @@ export default definePlugin({
   options: {},
   start(api) {
     const { button, group, row } = api.ui;
-    let store: Store = { kind: "loading" };
-    let stopped = false;
+    const readShelf = (): Store => {
+      if (!api.storage.readable) return { kind: "unreadable", reason: "It isn't valid JSON." };
+      const shelf = decodeShelf(api.storage.get<unknown>(SHELF_KEY, undefined));
+      if (shelf) return { kind: "ready", shelf };
+      api.log("warn", `${FILE} doesn't hold a shelf; leaving it untouched`);
+      return { kind: "unreadable", reason: "It doesn't hold a shelf." };
+    };
+    let store = readShelf();
     let drawer: Drawer | null = null;
     let panelHost: HTMLElement | null = null;
     let panelKey = "";
     let importText = "";
-    api.onCleanup(() => {
-      stopped = true;
-    });
     api.css(CSS);
 
     const readOnlyMessage = () =>
-      `The shelf file can't be read, so the shelf is read-only. Fix or remove ${api.data.path}, then choose Read again on Settings / Plugins / Prompt shelf.`;
+      `The shelf file can't be read, so the shelf is read-only. Fix or remove ${FILE}, then reload T3 Code with Ctrl+R.`;
 
     const setStore = (next: Store) => {
       store = next;
       if (next.kind === "ready") {
         api.report({ state: "active", detail: plural(next.shelf.snippets.length, "snippet") });
       } else if (next.kind === "unreadable") {
-        api.report({ state: "waiting", detail: `Shelf file unreadable: ${api.data.path}` });
+        api.report({ state: "waiting", detail: `Shelf file unreadable: ${FILE}` });
       }
       syncTab();
       if (drawer) renderEntries(drawer);
       renderPanel(false);
-    };
-
-    const load = () => {
-      setStore({ kind: "loading" });
-      api.data.read().then(
-        (value) => {
-          if (stopped) return;
-          const shelf = decodeShelf(value);
-          if (shelf) setStore({ kind: "ready", shelf });
-          else {
-            api.log("warn", `${api.data.path} doesn't hold a shelf; leaving it untouched`);
-            setStore({ kind: "unreadable", reason: "It doesn't hold a shelf." });
-          }
-        },
-        (error: unknown) => {
-          if (stopped) return;
-          api.log("warn", `Could not read ${api.data.path}: ${describe(error)}`);
-          setStore({ kind: "unreadable", reason: describe(error) });
-        },
-      );
     };
 
     /** Every change goes through here. Nothing is written unless the file was read. */
@@ -173,10 +153,7 @@ export default definePlugin({
       }
       const shelf = change(store.shelf);
       setStore({ kind: "ready", shelf });
-      api.data.write(shelf).catch((error: unknown) => {
-        api.log("error", `Could not save the shelf: ${describe(error)}`);
-        api.toast("The shelf could not be saved. See T3 Mode's log.", "error");
-      });
+      api.storage.set(SHELF_KEY, shelf);
       return true;
     };
 
@@ -249,12 +226,7 @@ export default definePlugin({
     };
 
     const syncTab = () => {
-      const count =
-        store.kind === "ready"
-          ? String(store.shelf.snippets.length)
-          : store.kind === "loading"
-            ? "…"
-            : "!";
+      const count = store.kind === "ready" ? String(store.shelf.snippets.length) : "!";
       setText(tabCount, count);
       setAttr(
         tabButton,
@@ -404,13 +376,11 @@ export default definePlugin({
       const message =
         store.kind === "unreadable"
           ? readOnlyMessage()
-          : store.kind === "loading"
-            ? "Reading the shelf…"
-            : store.shelf.snippets.length === 0
-              ? "Nothing on the shelf yet. Shelve a prompt, or import some on Settings / Plugins / Prompt shelf."
-              : rows.length === 0
-                ? `No prompt on the shelf matches "${query.trim()}".`
-                : null;
+          : store.shelf.snippets.length === 0
+            ? "Nothing on the shelf yet. Shelve a prompt, or import some on Settings / Plugins / Prompt shelf."
+            : rows.length === 0
+              ? `No prompt on the shelf matches "${query.trim()}".`
+              : null;
       state.list.replaceChildren(
         ...rows,
         ...(message
@@ -763,11 +733,7 @@ export default definePlugin({
       panelKey = key;
       const file = row({
         title: "File",
-        description: h("span", { className: "shelf-path", text: api.data.path }),
-        control:
-          store.kind === "unreadable"
-            ? button({ text: "Read again", variant: "outline", onClick: load })
-            : null,
+        description: h("span", { className: "shelf-path", text: FILE }),
       });
       if (store.kind !== "ready") {
         host.replaceChildren(
@@ -777,11 +743,8 @@ export default definePlugin({
             group(
               file,
               row({
-                title: store.kind === "loading" ? "Reading the shelf…" : "The shelf is read-only",
-                description:
-                  store.kind === "unreadable"
-                    ? `${store.reason} Nothing is written to the file until it reads again.`
-                    : "",
+                title: "The shelf is read-only",
+                description: `${store.reason} Nothing is written to the file until it is fixed and T3 Code reloads.`,
               }),
             ),
           ),
@@ -817,6 +780,6 @@ export default definePlugin({
       renderPanel(true);
     });
 
-    load();
+    setStore(store);
   },
 });

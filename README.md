@@ -6,4 +6,4 @@ A [t3mode](https://github.com/Hezaerd/t3mode) plugin that keeps reusable prompts
 - **Shelve a prompt.** Open the shelf and choose **Shelve the current prompt**.
 - **Edit, delete and import.** Open Settings / Plugins / Prompt shelf. To import, paste prompts separated by blank lines.
 
-The shelf lives in `<t3mode home>/data/prompt-shelf.json` (`%APPDATA%\t3mode\data\prompt-shelf.json`). If that file isn't a valid shelf, the plugin reports it, writes nothing until the file reads again, and offers **Read again** on its settings page.
+The shelf lives in `<t3mode home>/plugin-data/prompt-shelf.json`, which is `~/.t3/t3mode/plugin-data/prompt-shelf.json` unless `T3CODE_HOME` or `T3MODE_HOME` moves it. If that file isn't a valid shelf, the plugin reports it and writes nothing to it. Fix or delete the file, then reload T3 Code with Ctrl+R. Removing the plugin deletes the file, so copy it first if you want to keep your prompts.

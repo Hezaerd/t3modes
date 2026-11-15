@@ -6,7 +6,7 @@ A [t3mode](https://github.com/Hezaerd/t3mode) plugin. It closes the thread detai
 
 Edit `manifest.json`. The `id` is lowercase letters, digits and hyphens, and must never change once people install the plugin. `api` is the plugin API version the SDK targets.
 
-Write the plugin in `src/index.ts`. `definePlugin` and the API types come from `@t3mode/plugin-sdk`. Read the plugin rules in t3mode's `docs/architecture.md` first. Keep the top level of `src/index.ts` free of side effects. t3mode loads the code of every installed plugin, including one that is turned off, and calls `start` only when it is on.
+Write the plugin in `src/index.ts`. `definePlugin` and the API types come from `@t3mode/plugin-sdk`. Read the plugin rules in t3mode's `docs/architecture.md` first. Do the plugin's work in `start`, through the API, so turning the plugin off undoes it. t3mode runs none of a plugin's code while it is off.
 
 Until the SDK is on npm, install it from a tarball:
 

@@ -334,7 +334,7 @@ packages:
     resolution: {integrity: sha512-wwQAWhWSuHaag8c4q/KN/vCoeOJYshAIvMQwD4GpSb3OiZklFfvAgmj0VCBBImRpuF/aFgIRzllXlVX93Jevww==}
 
   '@t3mode/plugin-sdk@file:vendor/t3mode-plugin-sdk-1.1.0.tgz':
-    resolution: {integrity: sha512-FaRoFDyQwp1eiviME9VQDlvr3pyFBWPCu94P1/ItIstqRPzsv07aL/P1kgDP2ijJcv/L+6k6KCnuJMwRfHV88Q==, tarball: file:vendor/t3mode-plugin-sdk-1.1.0.tgz}
+    resolution: {integrity: sha512-v5w+FASgr8ZnW8Q2bj5MRhTjmbjxsoAPEPsk67s7BmUG89ASw7Ytqiso88V8ovpyNsj9/DtSCe1+0NE/YLwVig==, tarball: file:vendor/t3mode-plugin-sdk-1.1.0.tgz}
     version: 1.1.0
 
   '@testing-library/dom@10.4.2':

@@ -26,8 +26,6 @@ import {
   updateSnippet,
 } from "./shelf.ts";
 
-/** Where api.storage keeps the shelf, for messages. */
-const FILE = "<t3mode home>/plugin-data/prompt-shelf.json";
 const SHELF_KEY = "shelf";
 
 type Store =
@@ -120,7 +118,7 @@ export default definePlugin({
       if (!api.storage.readable) return { kind: "unreadable", reason: "It isn't valid JSON." };
       const shelf = decodeShelf(api.storage.get<unknown>(SHELF_KEY, undefined));
       if (shelf) return { kind: "ready", shelf };
-      api.log("warn", `${FILE} doesn't hold a shelf; leaving it untouched`);
+      api.log("warn", `${api.storage.path} doesn't hold a shelf; leaving it untouched`);
       return { kind: "unreadable", reason: "It doesn't hold a shelf." };
     };
     let store = readShelf();
@@ -131,14 +129,14 @@ export default definePlugin({
     api.css(CSS);
 
     const readOnlyMessage = () =>
-      `The shelf file can't be read, so the shelf is read-only. Fix or remove ${FILE}, then reload T3 Code with Ctrl+R.`;
+      `The shelf file can't be read, so the shelf is read-only. Fix or remove ${api.storage.path}, then reload T3 Code with Ctrl+R.`;
 
     const setStore = (next: Store) => {
       store = next;
       if (next.kind === "ready") {
         api.report({ state: "active", detail: plural(next.shelf.snippets.length, "snippet") });
       } else if (next.kind === "unreadable") {
-        api.report({ state: "waiting", detail: `Shelf file unreadable: ${FILE}` });
+        api.report({ state: "waiting", detail: `Shelf file unreadable: ${api.storage.path}` });
       }
       syncTab();
       if (drawer) renderEntries(drawer);
@@ -733,7 +731,7 @@ export default definePlugin({
       panelKey = key;
       const file = row({
         title: "File",
-        description: h("span", { className: "shelf-path", text: FILE }),
+        description: h("span", { className: "shelf-path", text: api.storage.path }),
       });
       if (store.kind !== "ready") {
         host.replaceChildren(

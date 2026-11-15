@@ -1,0 +1,13 @@
+{
+  "name": "t3mode-thread-details-collapsed",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vp pack"
+  },
+  "devDependencies": {
+    "@t3mode/plugin-sdk": "file:vendor/t3mode-plugin-sdk-1.0.0.tgz",
+    "vite-plus": "1.4.0"
+  },
+  "packageManager": "pnpm@12.14.0"
+}

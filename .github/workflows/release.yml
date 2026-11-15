@@ -1,0 +1,36 @@
+# Push a tag like v1.0.1 to publish a release with dist/manifest.json and dist/plugin.js.
+# t3mode installs the latest release, so the tag must match the version in manifest.json.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Check that the tag matches manifest.json
+        run: |
+          version="$(node -p "require('./dist/manifest.json').version")"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME doesn't match version $version in manifest.json."
+            exit 1
+          fi
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "$GITHUB_REF_NAME" dist/manifest.json dist/plugin.js
+          --title "$GITHUB_REF_NAME" --generate-notes

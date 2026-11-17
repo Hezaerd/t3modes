@@ -78,7 +78,7 @@ const drawRow = (row: HTMLElement, data: DiskRow) => {
   const fill = track?.firstElementChild;
   if (!label || !fill || !value) return;
   const tone = data.tone ?? "none";
-  setAttr(row, "aria-label", `${data.label}: ${data.percent}% used, ${data.detail}`);
+  setAttr(row, "aria-label", `${data.label}: ${data.spoken}, ${data.detail}`);
   setAttr(row, "title", `${data.key} ${data.detail}`);
   setText(label, data.label);
   setClass(fill, look.fill[tone]);
@@ -113,7 +113,19 @@ const checkIndicator = () => {
 };
 
 export default definePlugin({
-  options: {},
+  options: {
+    display: {
+      type: "select",
+      label: "Show",
+      description:
+        "Space used fills the bar as the drive fills, like the context window. Space left empties it, like the usage limits.",
+      choices: [
+        { value: "used", label: "Space used" },
+        { value: "left", label: "Space left" },
+      ],
+      default: "used",
+    },
+  },
   start(api) {
     const read = readDisks(api);
     if (!read) {
@@ -181,7 +193,7 @@ export default definePlugin({
       read().then(
         (disks) => {
           if (stopped) return;
-          rows = diskRows(disks);
+          rows = diskRows(disks, api.options.display);
           fetchedAt = Date.now();
           loading = false;
           api.report({ state: "active", detail: `${rows.length} drive(s)` });

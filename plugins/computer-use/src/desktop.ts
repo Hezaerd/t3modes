@@ -82,6 +82,30 @@ export async function releaseJournaled(heldPath: string): Promise<Held | null> {
   return held;
 }
 
+const inFront = async (e: Element): Promise<boolean> => {
+  const app = await xa.App.foreground({ timeout: 0 }).catch(() => null);
+  return app !== null && app.pid === e.pid;
+};
+
+/**
+ * Windows refuses SetForegroundWindow from a background process while another app is active (the
+ * foreground lock), and T3 Code is the active app whenever a user has just sent a message. An
+ * accessibility focus gets through that lock, and so does restoring a minimized window. Measured
+ * with T3 Code in front: activate was refused, focus and minimize-then-restore each worked.
+ */
+async function bringToFront(e: Element): Promise<void> {
+  const refused = await e.activate().then(
+    () => null,
+    (error: unknown) => error,
+  );
+  if (refused === null || (await inFront(e))) return;
+  await e.focus().catch(() => {});
+  if (await inFront(e)) return;
+  await e.minimize();
+  await e.restore();
+  if (!(await inFront(e))) throw refused;
+}
+
 const INVOKE: Readonly<Record<InvokeAction, (e: Element) => Promise<void>>> = {
   press: (e) => e.press(),
   toggle: (e) => e.toggle(),
@@ -90,7 +114,7 @@ const INVOKE: Readonly<Record<InvokeAction, (e: Element) => Promise<void>>> = {
   select: (e) => e.select(),
   focus: (e) => e.focus(),
   scroll_into_view: (e) => e.scrollIntoView(),
-  activate: (e) => e.activate(),
+  activate: bringToFront,
   maximize: (e) => e.maximize(),
   minimize: (e) => e.minimize(),
   restore: (e) => e.restore(),

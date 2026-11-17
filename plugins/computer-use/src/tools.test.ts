@@ -6,6 +6,7 @@ import {
   TOOL_LIST,
   parseKeys,
   parseToolCall,
+  pickByTitle,
   refsOf,
   renderOutcome,
   renderUnreachable,
@@ -37,7 +38,7 @@ describe("parseToolCall", () => {
       ]),
     ).toEqual([
       { do: "click", target: { kind: "ref", ref: "e7" }, button: "left", count: 1, mods: [] },
-      { do: "type", text: "hi", target: { kind: "sel", selector: "text_field", win: "w2" } },
+      { do: "type", text: "hi", target: { kind: "sel", selector: "text_field", win: { kind: "ref", ref: "w2" } } },
       { do: "key", combo: { key: "s", held: ["Control", "Shift"] }, repeat: 1 },
       { do: "scroll", target: { kind: "point", at: { x: 10, y: 20 }, image: null }, dx: 0, dy: 3 },
       { do: "drag", from: { kind: "ref", ref: "e1" }, to: { kind: "point", at: { x: 5, y: 6 }, image: null } },
@@ -94,6 +95,11 @@ describe("parseToolCall", () => {
       call: { tool: "observe", request: { win: null, scope: "window", zoom: null, outline: true } },
     });
     expect(error(parseToolCall("observe", { win: "e2" }))).toMatch(/window ref/);
+    expect(parseToolCall("observe", { win: " Settings " })).toMatchObject({ call: { request: { win: { kind: "title", title: "Settings" } } } });
+    expect(steps([{ do: "invoke", target: { sel: "button", win: "Untitled - Paint" }, action: "press" }])[0]).toMatchObject({
+      target: { kind: "sel", win: { kind: "title", title: "Untitled - Paint" } },
+    });
+    expect(error(parseToolCall("observe", { win: "  " }))).toMatch(/win is empty/);
     expect(error(parseToolCall("observe", { zoom: { x: 0, y: 0, width: 2, height: 40 } }))).toMatch(/8x8/);
     expect(error(parseToolCall("screenshot", {}))).toMatch(/Unknown tool/);
   });
@@ -101,11 +107,32 @@ describe("parseToolCall", () => {
   it("lists every ref a call names", () => {
     const result = act([
       { do: "click", target: { ref: "e1" } },
+      { do: "click", target: { sel: "button", win: "Settings" } },
       { do: "drag", target: { ref: "e2" }, to: { sel: "x", win: "w3" } },
       { do: "wait", target: { ref: "e4" } },
       { do: "key", keys: "a" },
     ]);
     expect(result.ok && refsOf(result.call)).toEqual(["e1", "e2", "w3", "e4"]);
+  });
+});
+
+describe("pickByTitle", () => {
+  const windows = [
+    { title: "Settings", app: "SystemSettings" },
+    { title: "Display settings - Control Panel", app: "explorer" },
+    { title: "Inbox - Outlook", app: "olk" },
+    { title: "Sent - Outlook", app: "olk" },
+  ];
+
+  it("prefers an exact title, ignoring case, then a unique part of one", () => {
+    expect(pickByTitle(windows, "settings")).toBe(windows[0]);
+    expect(pickByTitle(windows, "inbox")).toBe(windows[2]);
+    expect(pickByTitle(windows, "CONTROL PANEL")).toBe(windows[1]);
+  });
+
+  it("refuses an ambiguous or unknown title and lists the windows", () => {
+    expect(pickByTitle(windows, "outlook")).toMatch(/2 windows match "outlook".*"Inbox - Outlook" \(olk\)/);
+    expect(pickByTitle(windows, "paint")).toMatch(/No window title matches "paint"\. Windows: "Settings" \(SystemSettings\) · /);
   });
 });
 

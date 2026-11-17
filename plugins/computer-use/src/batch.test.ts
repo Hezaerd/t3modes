@@ -498,6 +498,18 @@ describe("targets", () => {
     expect(desktop.events).toEqual([]);
   });
 
+  it("takes a window title wherever it takes a w-ref", async () => {
+    const { desktop, session } = rig();
+    const agent = session();
+    expect(text(await agent.call("observe", { win: "other" }, never))).toMatch(/Outline of w\d+ "Other"/);
+    await act(agent, [{ do: "invoke", target: { sel: 'button[name="Save"]', win: "PROBE" }, action: "press" }]);
+    expect(desktop.events).toEqual(["press save"]);
+    expect(text(await act(agent, [{ do: "invoke", target: { sel: "button", win: "nope" }, action: "press" }]))).toMatch(
+      /No window title matches "nope"\. Windows: "Probe" \(app\) · "Other" \(app\)\./,
+    );
+    expect(text(await agent.call("observe", { win: "T3 Code" }, never))).toMatch(/No window title matches/);
+  });
+
   it("searches the current window's app for a selector without win, and every app but T3 Code for a wait", async () => {
     const { desktop, session } = rig();
     const agent = session();

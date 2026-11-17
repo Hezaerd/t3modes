@@ -17,7 +17,10 @@ import {
   type StepFailure,
   type Target,
   type WindowLine,
+  type WindowName,
   describeStep,
+  pickByTitle,
+  windowText,
 } from "./tools.ts";
 
 export interface ElementHandle {
@@ -246,6 +249,22 @@ class StepRun {
   }
 }
 
+async function namedWindow(
+  win: WindowName,
+  ctx: { readonly desktop: Desktop; readonly refs: RefTable<ElementHandle> },
+): Promise<{ readonly handle: ElementHandle; readonly pid: number | null }> {
+  const { desktop } = ctx;
+  if (win.kind === "ref") {
+    const handle = ctx.refs.resolve(win.ref);
+    if (!handle) throw failure("unknown_ref", `Unknown ref ${win.ref}. Observe again.`);
+    return { handle, pid: desktop.info(handle).pid };
+  }
+  const windows = (await desktop.windows()).filter((w) => !isOffLimits(desktop, w.pid));
+  const picked = pickByTitle(windows, win.title);
+  if (typeof picked === "string") throw failure("not_found", picked);
+  return picked;
+}
+
 async function resolveElement(
   target: ElementTarget,
   ctx: BatchContext,
@@ -264,9 +283,7 @@ async function resolveElement(
   }
   let scopePid: number | null = null;
   if (target.win) {
-    const win = ctx.refs.resolve(target.win);
-    if (!win) throw failure("unknown_ref", `Unknown ref ${target.win}. Observe again.`);
-    scopePid = desktop.info(win).pid;
+    scopePid = (await namedWindow(target.win, ctx)).pid;
     if (isOffLimits(desktop, scopePid)) throw failure("off_limits", "T3 Code's own window is off limits.");
   } else if (!forWait && ctx.currentWindow) {
     scopePid = ctx.currentWindow.pid;
@@ -277,7 +294,7 @@ async function resolveElement(
     if ("element" in found) return found.element;
     if (forWait) return null;
     if (ctx.now() >= deadline) {
-      const where = target.win ? `in ${target.win}` : scopePid === null ? "in any app" : "in the current window's app";
+      const where = target.win ? `in ${windowText(target.win)}` : scopePid === null ? "in any app" : "in the current window's app";
       throw failure("not_found", `Nothing matches ${target.selector} ${where}.`, "none", found.candidates);
     }
     await sleep(ctx.timing.pollMs, ctx.gate.signal);
@@ -562,10 +579,8 @@ const windowKey = (w: WindowFacts): IdentityKey => w.key;
 async function pickWindow(request: ObserveRequest, ctx: ObserveContext): Promise<WindowFacts | null | "t3-only"> {
   const { desktop } = ctx;
   if (request.win) {
-    const handle = ctx.refs.resolve(request.win);
-    if (!handle) throw failure("unknown_ref", `Unknown ref ${request.win}. Observe again.`);
-    const facts = await desktop.windowOf(handle);
-    if (!facts) throw failure("stale", `${request.win} is gone from the screen.`);
+    const facts = await desktop.windowOf((await namedWindow(request.win, ctx)).handle);
+    if (!facts) throw failure("stale", `${windowText(request.win)} is gone from the screen.`);
     return facts;
   }
   if (ctx.currentWindow && (await desktop.alive(ctx.currentWindow.handle))) {

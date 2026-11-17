@@ -13,9 +13,11 @@ export interface ImagePoint {
   readonly y: number;
 }
 
+export type WindowName = { readonly kind: "ref"; readonly ref: Ref } | { readonly kind: "title"; readonly title: string };
+
 export type Target =
   | { readonly kind: "ref"; readonly ref: Ref }
-  | { readonly kind: "sel"; readonly selector: string; readonly win: Ref | null }
+  | { readonly kind: "sel"; readonly selector: string; readonly win: WindowName | null }
   | { readonly kind: "point"; readonly at: ImagePoint; readonly image: string | null };
 
 export type ElementTarget = Exclude<Target, { kind: "point" }>;
@@ -83,7 +85,7 @@ export interface Zoom {
 }
 
 export interface ObserveRequest {
-  readonly win: Ref | null;
+  readonly win: WindowName | null;
   readonly scope: "window" | "screen";
   readonly zoom: Zoom | null;
   readonly outline: boolean;
@@ -112,7 +114,7 @@ const TargetWire = z
       .string()
       .optional()
       .describe('An xa11y selector, such as \'button[name="Save"]\' or \'text_field\'.'),
-    win: z.string().optional().describe("With sel: the w-ref of the window whose app to search."),
+    win: z.string().optional().describe('With sel: the window whose app to search, as a w-ref ("w2") or its title.'),
     x: z.number().optional().describe("With y: a pixel in the latest image you got."),
     y: z.number().optional(),
     image: z
@@ -153,7 +155,10 @@ const ActWire = z.strictObject({
 });
 
 const ObserveWire = z.strictObject({
-  win: z.string().optional().describe("A w-ref to look at. Default: the window you last acted on, else the active one."),
+  win: z
+    .string()
+    .optional()
+    .describe('The window to look at: a w-ref ("w2"), or its title, exact or a unique part of it. Default: the window you last acted on, else the active one.'),
   scope: z.enum(["window", "screen"]).optional().describe("window (default) or the whole primary screen."),
   zoom: z
     .strictObject({ x: z.number(), y: z.number(), width: z.number(), height: z.number() })
@@ -174,11 +179,12 @@ const jsonSchema = (schema: z.ZodType): ToolDefinition["inputSchema"] => {
 };
 
 const OBSERVE_DESCRIPTION = `Look at the Windows desktop without acting: a screenshot of one window, its accessibility outline with refs, and the list of top-level windows.
+If you know the window's title, pass it as win to see that window directly.
 Refs (e7, w2) stay the same for an element for as long as this chat runs. Points you send to act are pixels in the latest image you got.
 You rarely need this before act: act returns the new screen after every batch.`;
 
 const ACT_DESCRIPTION = `Drive the Windows desktop: run 1 to 20 steps in order, then get the new screen (image and outline) in the same result. Batch every step you can predict.
-Targets: {"ref":"e7"} from an outline; {"sel":"button[name=\\"Save\\"]","win":"w2"} (an xa11y selector; without win it searches the app of the window you last used); {"x":640,"y":212,"image":"i3"} a pixel in image i3. Always pass the image id: if a newer image came since, the batch is refused before anything runs.
+Targets: {"ref":"e7"} from an outline; {"sel":"button[name=\\"Save\\"]","win":"w2"} (an xa11y selector; win is a w-ref or a window title, and without it the search covers the app of the window you last used); {"x":640,"y":212,"image":"i3"} a pixel in image i3. Always pass the image id: if a newer image came since, the batch is refused before anything runs.
 Steps (do):
 - invoke {target, action}: press, toggle, expand, collapse, select, focus, scroll_into_view, activate, maximize, minimize, restore, close. No pointer, works on covered windows. Prefer it to click.
 - set {target, value}: replace a field's text or a slider's value. Prefer it to type when you replace a whole field.
@@ -207,6 +213,27 @@ const isRef = (text: string): text is Ref => /^[we][1-9]\d*$/.test(text);
 const parseRef = (text: string, what: string): Ref =>
   isRef(text) ? text : fail(`${what} "${text}" isn't a ref. Refs look like e7 or w2.`);
 
+const parseWindow = (text: string, what: string): WindowName => {
+  if (isRef(text)) return text.startsWith("w") ? { kind: "ref", ref: text } : fail(`${what} must be a window ref (w…) or a window title.`);
+  const title = text.trim();
+  return title ? { kind: "title", title } : fail(`${what} is empty.`);
+};
+
+/** An exact title wins, ignoring case; otherwise a unique part of one. Anything else is refused with the list. */
+export function pickByTitle<W extends { readonly title: string; readonly app: string }>(
+  windows: ReadonlyArray<W>,
+  query: string,
+): W | string {
+  const q = query.toLowerCase();
+  const exact = windows.filter((w) => w.title.toLowerCase() === q);
+  const matches = exact.length > 0 ? exact : windows.filter((w) => w.title.toLowerCase().includes(q));
+  if (matches.length === 1) return matches[0]!;
+  const list = windows.map((w) => `${JSON.stringify(w.title)} (${w.app})`).join(" · ") || "none";
+  return matches.length === 0
+    ? `No window title matches ${JSON.stringify(query)}. Windows: ${list}.`
+    : `${matches.length} windows match ${JSON.stringify(query)}; pass more of the title or a w-ref. Windows: ${list}.`;
+}
+
 type TargetWire = z.infer<typeof TargetWire>;
 
 const parseTarget = (wire: TargetWire, what: string): Target => {
@@ -217,9 +244,7 @@ const parseTarget = (wire: TargetWire, what: string): Target => {
   if (wire.ref !== undefined) return { kind: "ref", ref: parseRef(wire.ref, what) };
   if (wire.sel !== undefined) {
     if (!wire.sel.trim()) fail(`${what}: sel is empty.`);
-    const win = wire.win === undefined ? null : parseRef(wire.win, `${what} win`);
-    if (win !== null && !win.startsWith("w")) fail(`${what}: win must be a window ref (w…).`);
-    return { kind: "sel", selector: wire.sel, win };
+    return { kind: "sel", selector: wire.sel, win: wire.win === undefined ? null : parseWindow(wire.win, `${what}: win`) };
   }
   if (wire.x === undefined || wire.y === undefined) return fail(`${what} needs both x and y.`);
   if (!Number.isFinite(wire.x) || !Number.isFinite(wire.y) || wire.x < 0 || wire.y < 0) {
@@ -405,8 +430,7 @@ export function parseToolCall(tool: string, args: unknown): ParseResult {
       const parsed = ObserveWire.safeParse(raw);
       if (!parsed.success) return { ok: false, message: `Invalid observe arguments: ${zodMessage(parsed.error)}` };
       const w = parsed.data;
-      const win = w.win === undefined ? null : parseRef(w.win, "win");
-      if (win !== null && !win.startsWith("w")) fail("win must be a window ref (w…).");
+      const win = w.win === undefined ? null : parseWindow(w.win, "win");
       if (w.zoom && (w.zoom.width < 8 || w.zoom.height < 8 || w.zoom.x < 0 || w.zoom.y < 0)) {
         fail("zoom must be a rectangle of at least 8x8 pixels inside the latest image.");
       }
@@ -455,10 +479,10 @@ const targetsOf = (step: Step): ReadonlyArray<Target> => {
 };
 
 export const refsOf = (call: ToolCall): ReadonlyArray<Ref> => {
-  if (call.tool === "observe") return call.request.win ? [call.request.win] : [];
+  if (call.tool === "observe") return call.request.win?.kind === "ref" ? [call.request.win.ref] : [];
   return call.request.steps.flatMap(targetsOf).flatMap((target) => {
     if (target.kind === "ref") return [target.ref];
-    if (target.kind === "sel" && target.win) return [target.win];
+    if (target.kind === "sel" && target.win?.kind === "ref") return [target.win.ref];
     return [];
   });
 };
@@ -489,12 +513,14 @@ const quote = (text: string, max = 24): string => {
   return JSON.stringify(flat.length > max ? flat.slice(0, max - 1) + "…" : flat);
 };
 
+export const windowText = (win: WindowName): string => (win.kind === "ref" ? win.ref : JSON.stringify(win.title));
+
 export const describeTarget = (target: Target): string => {
   switch (target.kind) {
     case "ref":
       return target.ref;
     case "sel":
-      return `${target.selector}${target.win ? ` in ${target.win}` : ""}`;
+      return `${target.selector}${target.win ? ` in ${windowText(target.win)}` : ""}`;
     case "point":
       return `(${Math.round(target.at.x)}, ${Math.round(target.at.y)})`;
   }
@@ -614,13 +640,13 @@ const refusalText = (refusal: Refusal | { readonly kind: "invalid"; readonly mes
   }
 };
 
-const windowText = (w: WindowLine): string =>
+const windowLineText = (w: WindowLine): string =>
   `${w.ref} ${JSON.stringify(w.title)} (${w.app}${w.offLimits ? ", off limits" : w.active ? ", active" : ""})`;
 
 const observationText = (o: Observation): string[] => {
   const lines: string[] = [];
   if (o.note) lines.push(o.note);
-  if (o.windows) lines.push(`Windows: ${o.windows.map(windowText).join(" · ") || "none"}`);
+  if (o.windows) lines.push(`Windows: ${o.windows.map(windowLineText).join(" · ") || "none"}`);
   if (o.image) {
     lines.push(`Image ${o.image.id}: ${o.image.of}, ${o.image.width}x${o.image.height}. Points you send are pixels in this image.`);
   }

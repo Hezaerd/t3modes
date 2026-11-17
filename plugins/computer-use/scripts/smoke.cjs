@@ -123,6 +123,57 @@ $h = [H]::WindowFromPoint($p); $id = 0; [void][H]::GetWindowThreadProcessId($h, 
   return Number(execFileSync("powershell.exe", ["-NoProfile", "-Command", ps], { encoding: "utf8" }).trim());
 }
 
+function t3MainPid() {
+  const ps = `Get-CimInstance Win32_Process | Where-Object { $_.ExecutablePath -eq '${exe.replaceAll("'", "''")}' -and $_.CommandLine -notmatch '--type=' } | Select-Object -First 1 -ExpandProperty ProcessId`;
+  return Number(execFileSync("powershell.exe", ["-NoProfile", "-Command", ps], { encoding: "utf8" }).trim());
+}
+
+/** A point on the scratch form that also lies inside T3 Code's window must be refused: the screen image has no window of its own in front. */
+async function coveredT3Refusal(mcp, form, formBounds) {
+  const t3 = (await (await xa.App.byPid(t3MainPid(), { timeout: 0 })).windows())[0]?.bounds;
+  const at = { x: Math.round(formBounds.x + formBounds.width * 0.7), y: Math.round(formBounds.y + formBounds.height * 0.75) };
+  const margin = 20;
+  const insideT3 = t3 && at.x - margin >= t3.x && at.y - margin >= t3.y && at.x + margin < t3.x + t3.width && at.y + margin < t3.y + t3.height;
+  const probes = [[0, 0], [-margin, -margin], [margin, -margin], [-margin, margin], [margin, margin]];
+  const onForm = probes.every(([dx, dy]) => windowPidAt(at.x + dx, at.y + dy) === form.pid);
+  if (!insideT3 || !onForm) {
+    console.log(`skip covered-T3 check: the point ${at.x},${at.y} needs the form over T3 Code's window (T3 ${JSON.stringify(t3)}, on form ${onForm}); pass --at`);
+    failures += 1;
+    return;
+  }
+  const screen = await mcp.call("observe", { scope: "screen", outline: false });
+  const size = /Image (i\d+): primary screen, (\d+)x(\d+)/.exec(screen.text);
+  const shot = await xa.screenshot();
+  const [piece] = shot.desktopRectToImage({ x: at.x, y: at.y, width: 1, height: 1 });
+  const scale = Number(size[2]) / shot.width;
+  const point = { x: Math.round(piece.x * scale), y: Math.round(piece.y * scale), image: size[1] };
+  const before = formLog().length;
+  const refused = await mcp.call("act", { steps: [{ do: "click", target: point }], after: "none" });
+  await sleep(300);
+  check(
+    refused.isError && /on a T3 Code window, which is off limits/.test(refused.text) && formLog().length === before,
+    `a screen-image point over T3 Code's window is refused: ${refused.text.split("\n")[0]}`,
+  );
+}
+
+/** A tool server whose client closes stdin exits, and the control it held frees at once. */
+async function clientGoneFreesControl(mcp) {
+  const second = startMcp();
+  await second.init();
+  await mcp.call("act", { steps: [{ do: "wait", timeout_ms: 1 }], after: "none", release: true });
+  const holds = await second.call("act", { steps: [{ do: "wait", timeout_ms: 1 }], after: "none" });
+  const busy = await mcp.call("act", { steps: [{ do: "wait", timeout_ms: 1 }], after: "none" });
+  check(!holds.isError && busy.isError && /Another agent/.test(busy.text), `a second chat holds control: ${busy.text.slice(0, 60)}…`);
+  const exited = new Promise((resolve) => second.child.once("exit", (code) => resolve(code)));
+  second.child.stdin.end();
+  const code = await Promise.race([exited, sleep(5000).then(() => "still running")]);
+  if (code === "still running") second.child.kill();
+  check(code === 0, `the second tool server exited after its client closed stdin (exit ${code})`);
+  await sleep(300);
+  const free = await mcp.call("act", { steps: [{ do: "wait", timeout_ms: 1 }], after: "none" });
+  check(!free.isError, `control freed for the first chat: ${free.text.split("\n")[0]}`);
+}
+
 const median = (values) => [...values].sort((a, b) => a - b)[Math.floor(values.length / 2)];
 
 async function closedRefusal() {
@@ -157,6 +208,9 @@ async function main() {
     check(!!formRef, `observe lists the scratch window as ${formRef}`);
     check(/off limits/.test(first.text), "observe marks T3 Code off limits");
 
+    const byTitle = await mcp.call("observe", { win: TITLE.toUpperCase(), outline: true });
+    check(!byTitle.isError && /text_field "Smoke field"/.test(byTitle.text), `observe by window title: ${byTitle.text.split("\n").find((l) => l.startsWith("Outline")) ?? byTitle.text.slice(0, 80)}`);
+
     const look = await mcp.call("observe", { win: formRef });
     const fieldRef = /(e\d+) text_field "Smoke field"/.exec(look.text)?.[1];
     const buttonRef = /(e\d+) button "Save smoke"/.exec(look.text)?.[1];
@@ -186,11 +240,18 @@ async function main() {
       failures += 1;
     } else {
       const scale = Number(imageSize[2]) / w.width;
-      const point = { x: Math.round((center.x - w.x) * scale), y: Math.round((center.y - w.y) * scale) };
+      const point = { x: Math.round((center.x - w.x) * scale), y: Math.round((center.y - w.y) * scale), image: imageSize[1] };
+      if (imageSize[1] !== "i1") {
+        const stale = await mcp.call("act", { steps: [{ do: "click", target: { ...point, image: "i1" } }], after: "none" });
+        check(stale.isError && /isn't the latest image/.test(stale.text), `a point into an older image is refused: ${stale.text.split("\n")[0]}`);
+      }
+      if (!(await formInFront())) await mcp.call("act", { steps: [{ do: "invoke", target: { ref: formRef }, action: "activate" }], after: "none" });
       const before = formLog().length;
       const click = await mcp.call("act", { steps: [{ do: "click", target: point }], after: "none" });
       await sleep(400);
-      check(!click.isError && formLog().length === before + 1, `act click by image point (${point.x}, ${point.y}): ${click.text.split("\n")[0]}, form logged ${JSON.stringify(formLog().at(-1))}`);
+      check(!click.isError && formLog().length === before + 1, `act click by image point (${point.x}, ${point.y}) in ${point.image}: ${click.text.split("\n")[0]}, form logged ${JSON.stringify(formLog().at(-1))}`);
+
+      await coveredT3Refusal(mcp, form, w);
     }
     if (!(await formInFront())) {
       console.log(`skip typing: the scratch window isn't the active window`);
@@ -243,6 +304,7 @@ async function main() {
     for (let i = 0; i < runs; i++) {
       actMs.push((await mcp.call("act", { steps: [{ do: "set", target: { ref: fieldRef }, value: `run ${i}` }], after: "full" })).ms);
     }
+    await clientGoneFreesControl(mcp);
     await mcp.call("act", { steps: [{ do: "wait", timeout_ms: 1 }], after: "none", release: true });
     console.log(`observe ms over ${runs} runs: ${observeMs.map((m) => m.toFixed(0)).join(", ")} (median ${median(observeMs).toFixed(0)})`);
     console.log(`act (set + full after-state) ms over ${runs} runs: ${actMs.map((m) => m.toFixed(0)).join(", ")} (median ${median(actMs).toFixed(0)})`);

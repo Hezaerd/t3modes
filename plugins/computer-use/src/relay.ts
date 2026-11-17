@@ -28,6 +28,7 @@ class Link {
   private ready: Promise<Unreachable | null> | null = null;
   private nextId = 1;
   private readonly pending = new Map<number, (result: ToolResult) => void>();
+  private readonly sockets = new Set<Socket>();
 
   constructor(
     private readonly pipe: string,
@@ -39,6 +40,7 @@ class Link {
       const deadline = Date.now() + CONNECT_RETRY_MS;
       const attempt = () => {
         const socket = connect(this.pipe);
+        this.sockets.add(socket);
         const decoder = new FrameDecoder(parseServerFrame, MAX_SERVER_FRAME_BYTES);
         let welcomed = false;
         socket.once("connect", () => {
@@ -56,6 +58,7 @@ class Link {
           } else resolve("no-backend");
         });
         socket.on("close", () => {
+          this.sockets.delete(socket);
           if (this.socket === socket) {
             this.socket = null;
             this.ready = null;
@@ -89,6 +92,10 @@ class Link {
     }
   }
 
+  close(): void {
+    for (const socket of this.sockets) socket.destroy();
+  }
+
   async call(tool: string, args: unknown, signal: AbortSignal): Promise<ToolResult> {
     if (!this.socket) {
       this.ready ??= this.open();
@@ -113,6 +120,7 @@ export interface RelayOptions {
   readonly supported: boolean;
   readonly stdin: Readable;
   readonly stdout: Writable;
+  readonly exit: (code: number) => void;
 }
 
 export function runRelay(options: RelayOptions): void {
@@ -130,6 +138,17 @@ export function runRelay(options: RelayOptions): void {
     if (!link) return { ...renderUnreachable("no-backend") };
     return { ...(await link.call(request.params.name, request.params.arguments, extra.signal)) };
   });
+
+  let gone = false;
+  const clientGone = () => {
+    if (gone) return;
+    gone = true;
+    link?.close();
+    options.exit(0);
+  };
+  options.stdin.once("end", clientGone);
+  options.stdin.once("close", clientGone);
+  server.onclose = clientGone;
 
   void server.connect(new StdioServerTransport(options.stdin, options.stdout));
 }

@@ -334,6 +334,19 @@ describe("Stop", () => {
     expect(desktop.events).toEqual(["keydown Control", "keyup Control"]);
   });
 
+  it("names a presence lapse as the cause even after the pongs come back", async () => {
+    const { desktop, engine, session, clock } = rig();
+    const agent = session();
+    desktop.beforeInput = (event) => {
+      if (event !== "type b") return;
+      clock.offset += 10_000;
+      engine.tick();
+      clock.offset -= 10_000;
+    };
+    expect(text(await act(agent, [{ do: "type", text: "abcd" }]))).toMatch(/T3 Code stopped answering, so input was halted\. 2 of 4/);
+    expect(desktop.events).toEqual(["type a", "type b"]);
+  });
+
   it("drops a batch accepted before Stop even after Resume", async () => {
     const { desktop, engine, session } = rig();
     const first = session();
@@ -423,7 +436,9 @@ describe("targets", () => {
     desktop.foregroundId = "w-other";
     const app = /(w\d+) "Probe"/.exec(text(await agent.call("observe", {}, never)))![1]!;
     await agent.call("observe", { win: app }, never);
-    expect(text(await act(agent, [{ do: "click", target: { x: 10, y: 20 } }]))).toMatch(/on a T3 Code window, which is off limits/);
+    expect(text(await act(agent, [{ do: "click", target: { x: 10, y: 20 } }]))).toMatch(
+      /on a T3 Code window, which is off limits\. Bring the target window to the front first by invoking activate on its w-ref\./,
+    );
     expect(text(await act(agent, [{ do: "scroll", target: { x: 10, y: 20 }, dy: 1 }]))).toMatch(/off limits/);
     expect(desktop.events).toEqual([]);
 
@@ -537,7 +552,9 @@ describe("targets", () => {
     const t3 = /(w\d+) "T3 Code"/.exec(windows)![1]!;
     expect(text(await act(agent, [{ do: "invoke", target: { sel: "button", win: t3 }, action: "press" }]))).toMatch(/off limits/);
     desktop.foregroundId = "w-t3";
-    expect(text(await act(agent, [{ do: "key", keys: "enter" }]))).toMatch(/T3 Code is the active window/);
+    expect(text(await act(agent, [{ do: "key", keys: "enter" }]))).toMatch(
+      /T3 Code is the active window\. Bring the target window to the front first by invoking activate on its w-ref\./,
+    );
     expect(text(await act(agent, [{ do: "type", text: "hi" }]))).toMatch(/T3 Code is the active window/);
     expect(desktop.events).toEqual([]);
   });

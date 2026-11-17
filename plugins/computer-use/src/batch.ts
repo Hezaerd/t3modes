@@ -333,7 +333,7 @@ async function refuseKeysIntoT3(ctx: BatchContext): Promise<void> {
   if (isOffLimits(ctx.desktop, await ctx.desktop.foregroundPid())) {
     throw failure(
       "off_limits",
-      "Keyboard input refused: T3 Code is the active window. Activate the target window first (invoke activate on its w-ref, or click it).",
+      "Keyboard input refused: T3 Code is the active window. Bring the target window to the front first by invoking activate on its w-ref.",
     );
   }
 }
@@ -345,7 +345,7 @@ async function refuseCoveredByT3(at: DesktopPoint, own: WindowFacts | null, ctx:
   if (own && fg && fg.key === own.key && !isOffLimits(desktop, own.pid)) return;
   const windows = await desktop.windows();
   if (windows.some((w) => isOffLimits(desktop, w.pid) && inside(w.bounds, at))) {
-    throw failure("off_limits", "That point is on a T3 Code window, which is off limits.");
+    throw failure("off_limits", "That point is on a T3 Code window, which is off limits. Bring the target window to the front first by invoking activate on its w-ref.");
   }
 }
 

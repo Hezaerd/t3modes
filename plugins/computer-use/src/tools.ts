@@ -185,7 +185,7 @@ Targets: {"ref":"e7"} from an outline; {"sel":"button[name=\\"Save\\"]","win":"w
 Steps (do):
 - invoke {target, action}: press, toggle, expand, collapse, select, focus, scroll_into_view, activate, maximize, minimize, restore, close. No pointer, works on covered windows. Prefer it to click.
 - set {target, value}: replace a field's text or a slider's value. Prefer it to type when you replace a whole field.
-- click {target, button?, count?, mods?}, type {text, target?}, key {keys, repeat?}, scroll {target, dx?, dy?}, drag {target, to}: real mouse and keyboard input. type and key go to the focused control of the active window; activate the window first.
+- click {target, button?, count?, mods?}, type {text, target?}, key {keys, repeat?}, scroll {target, dx?, dy?}, drag {target, to}: real mouse and keyboard input. type and key go to the focused control of the active window. When T3 Code may be in front, invoke activate on the target window's w-ref first. Typing into T3 Code is refused, and so is pointing at a spot that a T3 Code window covers.
 - wait {target?, gone?, timeout_ms?}: until the target shows (or is gone); without a target, sleep.
 - open {uri}: open a URI or path as Explorer would (ms-settings:colors, https://…, C:\\file.txt).
 The user sees an indicator with Stop while you drive. If they stop you, don't retry until they resume. Set release: true on your last batch.

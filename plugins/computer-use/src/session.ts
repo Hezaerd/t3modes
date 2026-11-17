@@ -178,7 +178,12 @@ export class Engine {
       check: () => {
         const control = this.control;
         if (gateOpen(control, this.presence, session, generation, this.io.now())) {
-          if (signal.aborted) throw failure("aborted", "The call was cancelled.");
+          if (signal.aborted) {
+            if (signal.reason instanceof Error && signal.reason.message === "no indicator") {
+              throw failure("no_indicator", "T3 Code stopped answering, so input was halted.");
+            }
+            throw failure("aborted", "The call was cancelled.");
+          }
           return;
         }
         if (control.kind === "stopped" || control.generation !== generation) {

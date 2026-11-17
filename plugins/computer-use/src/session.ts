@@ -135,17 +135,17 @@ export class Engine {
   async confirmPresence(signal: AbortSignal): Promise<boolean> {
     const n = ++this.pings;
     const answered = new Promise<boolean>((resolve) => {
-      const waiter = { n, resolve: () => resolve(true) };
-      this.waiters.add(waiter);
-      const timer = setTimeout(() => {
-        this.waiters.delete(waiter);
-        resolve(false);
-      }, PONG_WAIT_MS);
-      signal.addEventListener("abort", () => {
+      const finish = (present: boolean) => {
         clearTimeout(timer);
+        signal.removeEventListener("abort", onAbort);
         this.waiters.delete(waiter);
-        resolve(false);
-      });
+        resolve(present);
+      };
+      const waiter = { n, resolve: () => finish(true) };
+      const onAbort = () => finish(false);
+      const timer = setTimeout(() => finish(false), PONG_WAIT_MS);
+      this.waiters.add(waiter);
+      signal.addEventListener("abort", onAbort, { once: true });
     });
     this.io.sendPage({ t: "ping", n });
     return answered;

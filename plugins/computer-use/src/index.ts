@@ -118,9 +118,9 @@ export default definePlugin({
       if (!wasDriving && view.mode === "driving") api.toast(`${view.label} is using your computer. Stop is at the top of the window.`);
       draw();
     });
-    backend.onStatus((next) => {
-      status = next;
-      if (next?.state === "running") void backend.send({ t: "pong", n: 0, instance });
+    backend.onStatus((current) => {
+      status = current;
+      if (current?.state === "running") void backend.send({ t: "pong", n: 0, instance });
       else view = null;
       draw();
     });

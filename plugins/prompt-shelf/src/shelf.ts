@@ -119,3 +119,12 @@ export const removeSnippet = (shelf: Shelf, id: string): Shelf => ({
   version: 1,
   snippets: shelf.snippets.filter((snippet) => snippet.id !== id),
 });
+
+export const shelfToken = (
+  textBeforeCaret: string,
+): { readonly start: number; readonly query: string } | null => {
+  const token = /(?:^|[ \n\t\r]);([^ \n\t\r]*)$/.exec(textBeforeCaret);
+  if (!token) return null;
+  const query = token[1]!;
+  return { start: textBeforeCaret.length - query.length - 1, query };
+};

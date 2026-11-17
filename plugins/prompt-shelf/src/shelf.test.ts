@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { type Snippet, addTexts, decodeShelf, emptyShelf, parseImport, rank } from "./shelf.ts";
+import { type Snippet, addTexts, decodeShelf, emptyShelf, parseImport, rank, shelfToken } from "./shelf.ts";
 
 const snippet = (text: string, extra: Partial<Snippet> = {}): Snippet => ({
   id: text,
@@ -97,5 +97,28 @@ describe("addTexts", () => {
       ["id1", "b"],
       ["id2", "c"],
     ]);
+  });
+});
+
+describe("shelfToken", () => {
+  it.each([
+    ["foo ;abc", { start: 4, query: "abc" }],
+    [";", { start: 0, query: "" }],
+    [";query", { start: 0, query: "query" }],
+    ["a;b", null],
+    ["foo ;abc ", null],
+    ["x\n;q", { start: 2, query: "q" }],
+    ["x\t;q", { start: 2, query: "q" }],
+    ["x\r;q", { start: 2, query: "q" }],
+    ["x ;q", { start: 2, query: "q" }],
+    ["", null],
+    ["foo", null],
+    [";abc\n", null],
+    [";abc\t", null],
+    [";abc\r", null],
+    [";one ;two", { start: 5, query: "two" }],
+    ["x\u00a0;q", null],
+  ])("recognizes the caret token in %j", (text, expected) => {
+    expect(shelfToken(text)).toEqual(expected);
   });
 });

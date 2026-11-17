@@ -218,7 +218,7 @@ const rig = (initial: Control = { kind: "idle", generation: 0 }): Rig => {
     page,
     persisted,
     clock,
-    session: (name = "claude-code") => engine.openSession({ name, version: "1", cwd: "D:\\src\\webapp", pid: pid++ }),
+    session: (name = "claude-code") => engine.openSession({ name, version: "1", cwd: "D:\\src\\webapp", pid: pid++, title: "" }),
   };
 };
 

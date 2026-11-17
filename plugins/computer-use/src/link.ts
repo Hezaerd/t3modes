@@ -28,6 +28,8 @@ export interface ClientInfo {
   readonly version: string;
   readonly cwd: string;
   readonly pid: number;
+  /** The T3 Code thread's title, or "" outside T3 Code. Older tool servers don't send it. */
+  readonly title: string;
 }
 
 export type ClientFrame =
@@ -58,7 +60,9 @@ export const parseClientFrame = (value: unknown): ClientFrame | null => {
       const c = value.client;
       if (!isId(value.v) || !isRecord(c)) return null;
       if (!isString(c.name) || !isString(c.version) || !isString(c.cwd) || !isId(c.pid)) return null;
-      return { t: "hello", v: value.v, client: { name: c.name, version: c.version, cwd: c.cwd, pid: c.pid } };
+      if (c.title !== undefined && !isString(c.title)) return null;
+      const title = c.title ?? "";
+      return { t: "hello", v: value.v, client: { name: c.name, version: c.version, cwd: c.cwd, pid: c.pid, title } };
     }
     case "call":
       return isId(value.id) && isString(value.tool)

@@ -1,6 +1,6 @@
 # Computer use
 
-A [t3mode](https://github.com/Hezaerd/t3mode) plugin that lets the agents T3 Code runs (Claude and Codex) see and drive the Windows desktop. While an agent drives, T3 Code shows a pill at the top of its window with the agent's name, the step it is on, and a **Stop** button.
+A [t3mode](https://github.com/Hezaerd/t3mode) plugin that lets the agents T3 Code runs (Claude and Codex) see and drive the Windows desktop. While an agent drives, T3 Code shows a pill at the top of its window with the agent's name, its chat's title, the step it is on, and a **Stop** button.
 
 ## The tools
 

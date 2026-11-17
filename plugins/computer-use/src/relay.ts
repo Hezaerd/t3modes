@@ -32,10 +32,11 @@ class Link {
 
   constructor(
     private readonly pipe: string,
-    private readonly client: () => ClientInfo,
+    private readonly client: () => Promise<ClientInfo>,
   ) {}
 
-  private open(): Promise<Unreachable | null> {
+  private async open(): Promise<Unreachable | null> {
+    const client = await this.client();
     return new Promise((resolve) => {
       const deadline = Date.now() + CONNECT_RETRY_MS;
       const attempt = () => {
@@ -44,7 +45,7 @@ class Link {
         const decoder = new FrameDecoder(parseServerFrame, MAX_SERVER_FRAME_BYTES);
         let welcomed = false;
         socket.once("connect", () => {
-          socket.write(encodeFrame({ t: "hello", v: LINK_VERSION, client: this.client() }));
+          socket.write(encodeFrame({ t: "hello", v: LINK_VERSION, client }));
         });
         socket.on("data", (chunk) => {
           const frames = decoder.push(chunk);
@@ -121,6 +122,8 @@ class Link {
 export interface RelayOptions {
   readonly home: string | undefined;
   readonly supported: boolean;
+  /** Asked once, when the first call opens the link, so T3 Code has titled the thread by then. */
+  readonly title: () => Promise<string>;
   readonly stdin: Readable;
   readonly stdout: Writable;
   readonly exit: (code: number) => void;
@@ -129,9 +132,10 @@ export interface RelayOptions {
 export function runRelay(options: RelayOptions): void {
   const server = new Server({ name: "t3mode-computer-use", version: VERSION }, { capabilities: { tools: {} } });
   const link = options.home
-    ? new Link(pipeName(dataDirFromHome(options.home), process.platform), () => {
+    ? new Link(pipeName(dataDirFromHome(options.home), process.platform), async () => {
         const client = server.getClientVersion();
-        return { name: client?.name ?? "", version: client?.version ?? "", cwd: process.cwd(), pid: process.pid };
+        const title = await options.title();
+        return { name: client?.name ?? "", version: client?.version ?? "", cwd: process.cwd(), pid: process.pid, title };
       })
     : null;
 

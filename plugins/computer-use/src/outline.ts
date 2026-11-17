@@ -44,7 +44,6 @@ export function identityKeys(nodes: ReadonlyArray<NodeFacts>, rootKey: string): 
   return keys as IdentityKey[];
 }
 
-const MAX_HANDLES = 5000;
 
 /**
  * Refs for one session. The same element keeps its ref across observations, and a ref names one
@@ -53,10 +52,18 @@ const MAX_HANDLES = 5000;
  */
 export class RefTable<H> {
   private readonly byKey = new Map<IdentityKey, Ref>();
+  private readonly keyOf = new Map<Ref, IdentityKey>();
   private readonly handles = new Map<Ref, H>();
   private next = 1;
 
-  constructor(private readonly same: (a: H, b: H) => Promise<boolean>) {}
+  constructor(
+    private readonly same: (a: H, b: H) => Promise<boolean>,
+    private readonly maxHandles = 5000,
+  ) {}
+
+  get trackedKeys(): number {
+    return this.byKey.size;
+  }
 
   async adopt(
     keys: ReadonlyArray<IdentityKey>,
@@ -83,6 +90,7 @@ export class RefTable<H> {
       if (ref === null || taken.has(ref)) {
         ref = `${isWindow[i] ? "w" : "e"}${this.next++}` as Ref;
         this.byKey.set(key, ref);
+        this.keyOf.set(ref, key);
       }
       taken.add(ref);
       this.handles.delete(ref);
@@ -90,8 +98,11 @@ export class RefTable<H> {
       refs.push(ref);
     }
     for (const ref of this.handles.keys()) {
-      if (this.handles.size <= MAX_HANDLES) break;
+      if (this.handles.size <= this.maxHandles) break;
       this.handles.delete(ref);
+      const key = this.keyOf.get(ref);
+      this.keyOf.delete(ref);
+      if (key !== undefined && this.byKey.get(key) === ref) this.byKey.delete(key);
     }
     return refs;
   }

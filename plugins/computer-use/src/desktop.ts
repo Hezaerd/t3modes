@@ -21,6 +21,7 @@ import {
   failure,
 } from "./batch.ts";
 import type { IdentityKey, NodeFacts } from "./outline.ts";
+import { BoundedMap } from "./bounded.ts";
 import { type Held, HeldJournal } from "./held.ts";
 import { encodePng } from "./png.ts";
 import type { InvokeAction, MouseButton, StepFailure } from "./tools.ts";
@@ -103,8 +104,8 @@ export function loadDesktop(heldPath: string, log: (message: string) => void): D
   xa.setDefaultTimeout({ timeout: 0 });
   const sim = xa.inputSim();
   const t3codePid = process.ppid;
-  const firstSeen = new Map<string, number>();
-  const appNames = new Map<number, string>();
+  const firstSeen = new BoundedMap<string, number>(1000);
+  const appNames = new BoundedMap<number, string>(256);
   const held = new HeldJournal((now) => {
     if (now) writeFileSync(heldPath, JSON.stringify(now));
     else rmSync(heldPath, { force: true });
@@ -115,7 +116,8 @@ export function loadDesktop(heldPath: string, log: (message: string) => void): D
 
   const facts = (w: Element, app: string): WindowFacts => {
     const key = keyOf(w);
-    if (!firstSeen.has(key)) firstSeen.set(key, Date.now());
+    const seen = firstSeen.get(key) ?? Date.now();
+    firstSeen.set(key, seen);
     return {
       handle: handle(w),
       key,
@@ -124,7 +126,7 @@ export function loadDesktop(heldPath: string, log: (message: string) => void): D
       pid: w.pid ?? -1,
       active: w.active,
       bounds: rect(w.bounds),
-      firstSeen: firstSeen.get(key)!,
+      firstSeen: seen,
     };
   };
 

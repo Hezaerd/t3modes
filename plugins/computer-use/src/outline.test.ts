@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 
-import { type NodeFacts, RefTable, identityKeys, renderOutline } from "./outline.ts";
+import { type IdentityKey, type NodeFacts, RefTable, identityKeys, renderOutline } from "./outline.ts";
 import type { Ref } from "./tools.ts";
 
 const node = (parent: number | null, role: string, name: string | null, extra: Partial<NodeFacts> = {}): NodeFacts => ({
@@ -89,6 +89,13 @@ describe("RefTable", () => {
     expect(again).toEqual(["w1", "e2", "e5", "e4"]);
     expect(table.resolve("e3")).toEqual({ node: "c" });
     expect(table.resolve("e5")).toEqual({ node: "X" });
+  });
+
+  it("forgets the identity of a ref it evicted", async () => {
+    const table = new RefTable<Handle>(sameNode, 3);
+    for (let i = 0; i < 10; i++) await table.adopt([`key${i}` as IdentityKey], [false], [{ node: `n${i}` }]);
+    expect(table.trackedKeys).toBeLessThanOrEqual(3);
+    expect(table.resolve((await table.adopt(["key9" as IdentityKey], [false], [{ node: "n9" }]))[0]!)).toEqual({ node: "n9" });
   });
 
   it("treats a stale comparison as a different node", async () => {

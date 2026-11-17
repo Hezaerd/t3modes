@@ -21,6 +21,7 @@ import {
   failure,
 } from "./batch.ts";
 import type { IdentityKey, NodeFacts } from "./outline.ts";
+import { type Held, HeldJournal } from "./held.ts";
 import { encodePng } from "./png.ts";
 import type { InvokeAction, MouseButton, StepFailure } from "./tools.ts";
 
@@ -68,11 +69,6 @@ const quiet = async <T>(call: () => Promise<T>, fallback: T): Promise<T> => {
 const rect = (b: xa.Rect | null): Bounds | null =>
   b ? { x: b.x, y: b.y, width: b.width, height: b.height } : null;
 
-interface Held {
-  readonly keys: ReadonlyArray<string>;
-  readonly buttons: ReadonlyArray<MouseButton>;
-}
-
 /** Called once at start, before the pipe opens: lets go of what a killed backend held. */
 export async function releaseJournaled(heldPath: string): Promise<Held | null> {
   let held: Held;
@@ -109,13 +105,10 @@ export function loadDesktop(heldPath: string, log: (message: string) => void): D
   const t3codePid = process.ppid;
   const firstSeen = new Map<string, number>();
   const appNames = new Map<number, string>();
-  const heldKeys = new Set<string>();
-  const heldButtons = new Set<MouseButton>();
-
-  const journal = () => {
-    if (heldKeys.size === 0 && heldButtons.size === 0) rmSync(heldPath, { force: true });
-    else writeFileSync(heldPath, JSON.stringify({ keys: [...heldKeys], buttons: [...heldButtons] }));
-  };
+  const held = new HeldJournal((now) => {
+    if (now) writeFileSync(heldPath, JSON.stringify(now));
+    else rmSync(heldPath, { force: true });
+  });
 
   const keyOf = (w: Element): IdentityKey =>
     (w.stableId ? `id:${w.pid ?? "?"}:${w.stableId}` : `path:${w.pid ?? "?"}/${w.role}:${w.name ?? ""}`) as IdentityKey;
@@ -156,22 +149,6 @@ export function loadDesktop(heldPath: string, log: (message: string) => void): D
 
   const pointer = (target: PointerTarget): number[] | Element =>
     target.kind === "point" ? [target.at.x, target.at.y] : el(target.element);
-
-  const press = async (kind: "key" | "button", name: string, down: boolean, call: () => Promise<void>) => {
-    const set = (kind === "key" ? heldKeys : heldButtons) as Set<string>;
-    if (down) {
-      set.add(name);
-      journal();
-    }
-    try {
-      await native(call);
-    } finally {
-      if (!down) {
-        set.delete(name);
-        journal();
-      }
-    }
-  };
 
   return {
     t3codePid,
@@ -280,11 +257,11 @@ export function loadDesktop(heldPath: string, log: (message: string) => void): D
     },
 
     moveTo: (target) => native(() => sim.moveTo(pointer(target))),
-    mouseDown: (button) => press("button", button, true, () => sim.mouseDown(button)),
-    mouseUp: (button) => press("button", button, false, () => sim.mouseUp(button)),
+    mouseDown: (button) => held.down("button", button, () => native(() => sim.mouseDown(button))),
+    mouseUp: (button) => held.up("button", button, () => native(() => sim.mouseUp(button))),
     wheel: (target, dx, dy) => native(() => sim.scroll(pointer(target), dx, dy)),
-    keyDown: (key) => press("key", key, true, () => sim.keyDown(key)),
-    keyUp: (key) => press("key", key, false, () => sim.keyUp(key)),
+    keyDown: (key) => held.down("key", key, () => native(() => sim.keyDown(key))),
+    keyUp: (key) => held.up("key", key, () => native(() => sim.keyUp(key))),
     typeChar: (char) => native(() => sim.typeText(char)),
 
     invoke: (h, action) => native(() => INVOKE[action](el(h))),

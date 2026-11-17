@@ -212,6 +212,8 @@ interface Resolved {
 /** Counts the native input calls a step sends, so a failure can say what was delivered. */
 class StepRun {
   sent = 0;
+  private readonly held: Array<() => Promise<void>> = [];
+
   constructor(private readonly ctx: BatchContext) {}
 
   async input(call: () => Promise<void>): Promise<void> {
@@ -220,11 +222,21 @@ class StepRun {
     this.sent += 1;
   }
 
-  /** Releases may always run, after Stop too: they let go of what this step holds. */
-  async release(call: () => Promise<void>): Promise<void> {
-    try {
-      await call();
-    } catch {}
+  /** The release is owed from the moment the gate admits the down call, since a down that rejects may still have landed. */
+  async hold(down: () => Promise<void>, up: () => Promise<void>): Promise<void> {
+    this.ctx.gate.check();
+    this.held.push(up);
+    await down();
+    this.sent += 1;
+  }
+
+  /** Releases the latest holds, newest first. Runs after Stop too, and never throws. */
+  async letGo(count = this.held.length): Promise<void> {
+    for (const up of this.held.splice(this.held.length - count, count).reverse()) {
+      try {
+        await up();
+      } catch {}
+    }
   }
 }
 
@@ -323,42 +335,32 @@ async function click(
   mods: ReadonlyArray<string>,
 ): Promise<void> {
   const { desktop } = ctx;
-  const held: string[] = [];
   try {
-    for (const mod of mods) {
-      await run.input(() => desktop.keyDown(mod));
-      held.push(mod);
-    }
+    for (const mod of mods) await run.hold(() => desktop.keyDown(mod), () => desktop.keyUp(mod));
     await run.input(() => desktop.moveTo(resolved.pointer));
     for (let i = 0; i < count; i++) {
-      await run.input(() => desktop.mouseDown(button));
-      await run.release(() => desktop.mouseUp(button));
+      await run.hold(() => desktop.mouseDown(button), () => desktop.mouseUp(button));
+      await run.letGo(1);
     }
   } finally {
-    for (const mod of held.reverse()) await run.release(() => desktop.keyUp(mod));
+    await run.letGo();
   }
 }
 
 async function chord(run: StepRun, ctx: BatchContext, combo: KeyCombo): Promise<void> {
   const { desktop } = ctx;
-  const held: string[] = [];
   try {
-    for (const mod of combo.held) {
-      await run.input(() => desktop.keyDown(mod));
-      held.push(mod);
-    }
-    await run.input(() => desktop.keyDown(combo.key));
-    await run.release(() => desktop.keyUp(combo.key));
+    for (const key of [...combo.held, combo.key]) await run.hold(() => desktop.keyDown(key), () => desktop.keyUp(key));
   } finally {
-    for (const mod of held.reverse()) await run.release(() => desktop.keyUp(mod));
+    await run.letGo();
   }
 }
 
 async function drag(run: StepRun, ctx: BatchContext, from: Resolved, to: Resolved): Promise<void> {
   const { desktop } = ctx;
   await run.input(() => desktop.moveTo(from.pointer));
-  await run.input(() => desktop.mouseDown("left"));
   try {
+    await run.hold(() => desktop.mouseDown("left"), () => desktop.mouseUp("left"));
     if (from.at && to.at) {
       const moves = ctx.timing.dragMoves;
       for (let i = 1; i < moves; i++) {
@@ -373,7 +375,7 @@ async function drag(run: StepRun, ctx: BatchContext, from: Resolved, to: Resolve
     await sleep(ctx.timing.dragStepMs, ctx.gate.signal);
     await run.input(() => desktop.moveTo(to.pointer));
   } finally {
-    await run.release(() => desktop.mouseUp("left"));
+    await run.letGo();
   }
 }
 

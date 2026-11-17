@@ -41,6 +41,8 @@ class FakeDesktop implements Desktop {
   foregroundId = "w-app";
   /** Runs before an input primitive is recorded; tests press Stop from here. */
   beforeInput: (event: string) => void = () => {};
+  /** Makes an input primitive reject after it was delivered. */
+  failAfter: (event: string) => boolean = () => false;
   readonly elements = new Map<string, FakeElement>();
 
   constructor() {
@@ -76,6 +78,7 @@ class FakeDesktop implements Desktop {
   private input(event: string): void {
     this.beforeInput(event);
     this.events.push(event);
+    if (this.failAfter(event)) throw new Error(`${event} failed after delivery`);
   }
 
   async windows() {
@@ -297,6 +300,35 @@ describe("Stop", () => {
     const result = await agent.call("act", { steps: [{ do: "type", text: "abcdefgh" }], after: "none" }, cancel.signal);
     expect(desktop.events).toEqual(["type a", "type b", "type c"]);
     expect(text(result)).toMatch(/The call was cancelled\. 3 of 8 characters were typed\./);
+  });
+
+  it("releases a key or button whose down call rejected after delivering it", async () => {
+    const { desktop, session } = rig();
+    const agent = session();
+    const save = await refOf(agent, "Save");
+    desktop.failAfter = (event) => event === "keydown Shift";
+    await act(agent, [{ do: "click", target: { ref: save }, mods: ["ctrl", "shift"] }]);
+    expect(desktop.events).toEqual(["keydown Control", "keydown Shift", "keyup Shift", "keyup Control"]);
+
+    desktop.events.length = 0;
+    desktop.failAfter = (event) => event === "down left";
+    expect(text(await act(agent, [{ do: "click", target: { ref: save }, mods: ["ctrl"] }]))).toMatch(/may have been sent/);
+    expect(desktop.events).toEqual(["keydown Control", "move save", "down left", "up left", "keyup Control"]);
+
+    desktop.events.length = 0;
+    desktop.failAfter = (event) => event === "keydown x";
+    await act(agent, [{ do: "key", keys: "ctrl+x" }]);
+    expect(desktop.events).toEqual(["keydown Control", "keydown x", "keyup x", "keyup Control"]);
+  });
+
+  it("sends no key-up for a key the gate refused to press", async () => {
+    const { desktop, engine, session } = rig();
+    const agent = session();
+    desktop.beforeInput = (event) => {
+      if (event === "keydown Control") engine.page({ t: "stop" });
+    };
+    await act(agent, [{ do: "key", keys: "ctrl+shift+x" }]);
+    expect(desktop.events).toEqual(["keydown Control", "keyup Control"]);
   });
 
   it("drops a batch accepted before Stop even after Resume", async () => {

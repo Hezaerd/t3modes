@@ -340,8 +340,16 @@ async function refuseKeysIntoT3(ctx: BatchContext): Promise<void> {
   }
 }
 
+function refuseIndicator(at: DesktopPoint, ctx: BatchContext): void {
+  const rect = ctx.gate.indicatorRect;
+  if (rect && inside({ x: rect.x - 8, y: rect.y - 8, width: rect.width + 16, height: rect.height + 16 }, at)) {
+    throw failure("off_limits", "The desktop indicator and its 8 px margin are off limits.");
+  }
+}
+
 /** xa11y has no hit test, so a point on a T3 Code window is safe only when the window it was aimed at is in front. */
 async function refuseCoveredByT3(at: DesktopPoint, own: WindowFacts | null, ctx: BatchContext): Promise<void> {
+  refuseIndicator(at, ctx);
   const { desktop } = ctx;
   const fg = await desktop.foreground();
   if (own && fg && fg.key === own.key && !isOffLimits(desktop, own.pid)) return;
@@ -394,6 +402,7 @@ async function drag(run: StepRun, ctx: BatchContext, from: Aim, to: Aim): Promis
           Math.round(from.at.y + ((to.at.y - from.at.y) * i) / moves),
         );
         await sleep(ctx.timing.dragStepMs, ctx.gate.signal);
+        refuseIndicator(at, ctx);
         await run.input(() => desktop.moveTo({ kind: "point", at }));
       }
     }

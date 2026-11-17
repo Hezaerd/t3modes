@@ -521,6 +521,43 @@ describe("desktop indicator lease", () => {
   });
 });
 
+describe("desktop indicator pointer protection", () => {
+  it.each([
+    { do: "click", target: { x: 31, y: 36 } },
+    { do: "scroll", target: { x: 31, y: 36 }, dy: 2 },
+    { do: "drag", target: { x: 31, y: 36 }, to: { x: 10, y: 20 } },
+    { do: "drag", target: { x: 10, y: 20 }, to: { x: 31, y: 36 } },
+    { do: "click", target: { sel: 'button[name="Save"]' } },
+    { do: "scroll", target: { sel: 'button[name="Save"]' }, dy: 2 },
+    { do: "type", target: { sel: 'button[name="Save"]' }, text: "x" },
+  ])("refuses $do inside the pill or its margin even with the app in front", async (step) => {
+    const { desktop, session, indicator } = rig();
+    indicator.rect = { x: 1068, y: 178, width: 20, height: 20 };
+    const agent = session();
+    await agent.call("observe", {}, never);
+    expect(text(await act(agent, [step]))).toMatch(/indicator and its 8 px margin are off limits/);
+    expect(desktop.events).toEqual([]);
+  });
+
+  it("refuses an intermediate drag move and releases the mouse", async () => {
+    const { desktop, session, indicator } = rig();
+    indicator.rect = { x: 1100, y: 130, width: 20, height: 20 };
+    const agent = session();
+    await agent.call("observe", {}, never);
+    expect(text(await act(agent, [{ do: "drag", target: { x: 10, y: 20 }, to: { x: 130, y: 20 } }]))).toMatch(/indicator and its 8 px margin are off limits/);
+    expect(desktop.events).toEqual(["move 1020,140", "down left", "up left"]);
+  });
+
+  it("allows pointer input outside the margin", async () => {
+    const { desktop, session, indicator } = rig();
+    indicator.rect = { x: 1068, y: 178, width: 20, height: 20 };
+    const agent = session();
+    await agent.call("observe", {}, never);
+    expect((await act(agent, [{ do: "click", target: { x: 48, y: 36 } }])).isError).toBe(false);
+    expect(desktop.events).toEqual(["move 1096,172", "down left", "up left"]);
+  });
+});
+
 describe("targets", () => {
   it("maps an image point through that image and refuses it once the window moved", async () => {
     const { desktop, session } = rig();

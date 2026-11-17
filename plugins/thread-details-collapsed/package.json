@@ -5,9 +5,5 @@
   "license": "MIT",
   "scripts": {
     "build": "vp pack"
-  },
-  "devDependencies": {
-    "@t3mode/plugin-sdk": "^1.0.0",
-    "vite-plus": "1.4.0"
   }
 }

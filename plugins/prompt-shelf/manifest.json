@@ -1,8 +1,8 @@
 {
   "id": "prompt-shelf",
   "name": "Prompt shelf",
-  "version": "1.0.0",
-  "description": "A shelf of reusable prompts next to the composer's Stash. Ctrl+Alt+S opens it, and Enter inserts a prompt at the caret.",
+  "version": "1.1.0",
+  "description": "A shelf of reusable prompts next to the composer's Stash. Type ; to pick a prompt in place, or use Ctrl+Alt+S to open the shelf.",
   "author": "Hezaerd",
   "api": 1
 }

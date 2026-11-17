@@ -14,7 +14,7 @@ import {
   sel,
 } from "./composer.ts";
 import { h } from "./dom.ts";
-import { type IconName, type Look, currentLook, svgIcon } from "./look.ts";
+import { type IconName, type Look, MENU, currentLook, svgIcon } from "./look.ts";
 import {
   type Shelf,
   type Snippet,
@@ -23,6 +23,7 @@ import {
   parseImport,
   rank,
   removeSnippet,
+  shelfToken,
   updateSnippet,
 } from "./shelf.ts";
 
@@ -44,6 +45,18 @@ interface Drawer {
   /** Where the caret was in the composer when the drawer opened. */
   readonly caret: Range | null;
   entries: ReadonlyArray<Entry>;
+  rows: ReadonlyArray<HTMLElement>;
+  highlighted: number;
+}
+
+interface Picker {
+  readonly layer: HTMLElement;
+  readonly list: HTMLElement;
+  readonly scroll: HTMLElement;
+  node: Text;
+  start: number;
+  query: string;
+  snippets: ReadonlyArray<Snippet>;
   rows: ReadonlyArray<HTMLElement>;
   highlighted: number;
 }
@@ -123,6 +136,8 @@ export default definePlugin({
     };
     let store = readShelf();
     let drawer: Drawer | null = null;
+    let picker: Picker | null = null;
+    let dismissed: { node: Text; start: number } | null = null;
     let panelHost: HTMLElement | null = null;
     let panelKey = "";
     let importText = "";
@@ -140,6 +155,7 @@ export default definePlugin({
       }
       syncTab();
       if (drawer) renderEntries(drawer);
+      syncPicker(true);
       renderPanel(false);
     };
 
@@ -157,6 +173,14 @@ export default definePlugin({
 
     const now = () => new Date().toISOString();
     const newId = () => crypto.randomUUID();
+    const recordUse = (id: string) =>
+      save((shelf) =>
+        updateSnippet(shelf, id, (item) => ({
+          ...item,
+          uses: item.uses + 1,
+          lastUsedAt: now(),
+        })),
+      );
 
     const iconSlot = (look: Look, name: IconName | null) =>
       h(
@@ -247,6 +271,7 @@ export default definePlugin({
       if (!form || !surface || surface.getClientRects().length === 0) {
         setStyle(tab, "display", "none");
         if (drawer) closeDrawer(false);
+        closePicker();
         return;
       }
       const viewport = document.documentElement;
@@ -270,12 +295,24 @@ export default definePlugin({
       setStyle(tab, "bottom", `${viewport.clientHeight - top}px`);
       setStyle(tabSurface, "margin-bottom", `-${overlap}px`);
 
+      const place = (layer: HTMLElement, rect: DOMRect, height: number, minimum: number) => {
+        const bottom = rect.top + overlap;
+        setStyle(layer, "bottom", `${height - bottom}px`);
+        setStyle(layer, "left", `${rect.left + inset}px`);
+        setStyle(layer, "width", `${rect.width - 2 * inset}px`);
+        setStyle(layer, "max-height", `${Math.max(minimum, bottom - 24)}px`);
+      };
       if (drawer) {
-        const bottom = top + overlap;
-        setStyle(drawer.layer, "bottom", `${viewport.clientHeight - bottom}px`);
-        setStyle(drawer.layer, "left", `${formRect.left + inset}px`);
-        setStyle(drawer.layer, "width", `${formRect.width - 2 * inset}px`);
-        setStyle(drawer.layer, "max-height", `${Math.max(120, bottom - 24)}px`);
+        place(
+          drawer.layer,
+          new DOMRect(formRect.left, top, formRect.width, 0),
+          viewport.clientHeight,
+          120,
+        );
+      }
+      if (picker) {
+        place(picker.layer, surface.getBoundingClientRect(), innerHeight, 96);
+        scrollFade(picker);
       }
     };
 
@@ -443,6 +480,7 @@ export default definePlugin({
       ) {
         return false;
       }
+      closePicker();
       const look = currentLook();
       const list = h("ul", {
         className: look.list,
@@ -566,14 +604,304 @@ export default definePlugin({
         api.toast("The prompt could not be inserted into the composer.", "error");
         return;
       }
-      save((shelf) =>
-        updateSnippet(shelf, snippet.id, (item) => ({
-          ...item,
-          uses: item.uses + 1,
-          lastUsedAt: now(),
-        })),
-      );
+      recordUse(snippet.id);
     };
+
+    const pickerLayer = api.element("div");
+    pickerLayer.className = MENU.layer;
+    pickerLayer.setAttribute(ATTR, "picker");
+    pickerLayer.setAttribute("data-composer-drawer-layer", "true");
+    const pickerList = h("div", {
+      className: MENU.list,
+      attrs: {
+        role: "listbox",
+        "data-slot": "command-list",
+        "aria-label": "Shelf prompts",
+        tabindex: "-1",
+      },
+    });
+    const pickerScroll = h(
+      "div",
+      {
+        className: MENU.viewport,
+        attrs: { "data-slot": "scroll-area-viewport", tabindex: "0" },
+        style: { overflow: "auto" },
+      },
+      pickerList,
+    );
+    const pickerRoot = h(
+      "div",
+      { className: MENU.root, attrs: { role: "presentation" } },
+      pickerScroll,
+    );
+    const pickerSurface = h(
+      "div",
+      {
+        className: MENU.surface,
+        attrs: {
+          "data-composer-banner-surface": "attached",
+          "data-variant": "default",
+          "data-composer-command-drawer": "true",
+        },
+      },
+      pickerRoot,
+    );
+    pickerLayer.append(pickerSurface);
+
+    const tooltip = api.element("div");
+    tooltip.className = MENU.tooltipPositioner;
+    for (const [name, value] of Object.entries({
+      "data-open": "",
+      "data-side": "top",
+      "data-align": "center",
+      role: "presentation",
+      "data-slot": "tooltip-positioner",
+    }))
+      tooltip.setAttribute(name, value);
+    tooltip.style.position = "fixed";
+    let tooltipTimer: ReturnType<typeof setTimeout> | null = null;
+    const hideTooltip = () => {
+      if (tooltipTimer !== null) clearTimeout(tooltipTimer);
+      tooltipTimer = null;
+      tooltip.remove();
+    };
+    const showTooltip = (text: HTMLElement, prompt: string) => {
+      hideTooltip();
+      tooltipTimer = setTimeout(() => {
+        tooltipTimer = null;
+        if (!picker || !text.isConnected || text.scrollWidth <= text.clientWidth) return;
+        const rect = text.getBoundingClientRect();
+        tooltip.style.setProperty("--available-width", `${Math.max(0, innerWidth - 16)}px`);
+        tooltip.style.setProperty("--available-height", `${Math.max(0, rect.top - 12)}px`);
+        tooltip.style.setProperty("--anchor-width", `${rect.width}px`);
+        tooltip.style.setProperty("--anchor-height", `${rect.height}px`);
+        tooltip.style.setProperty("--transform-origin", "center calc(100% + 4px)");
+        tooltip.replaceChildren(
+          h(
+            "div",
+            {
+              className: MENU.tooltipPopup,
+              attrs: {
+                "data-open": "",
+                "data-side": "top",
+                "data-align": "center",
+                tabindex: "-1",
+                "data-base-ui-focusable": "",
+                "data-slot": "tooltip-popup",
+              },
+            },
+            h("div", {
+              className: MENU.tooltipViewport,
+              attrs: { "data-slot": "tooltip-viewport" },
+              text: prompt,
+            }),
+          ),
+        );
+        document.body.append(tooltip);
+        const box = tooltip.getBoundingClientRect();
+        tooltip.style.left = `${Math.max(8, Math.min(rect.left + (rect.width - box.width) / 2, innerWidth - box.width - 8))}px`;
+        tooltip.style.top = `${Math.max(8, Math.min(rect.top - box.height - 4, innerHeight - box.height - 8))}px`;
+      }, 600);
+    };
+    const closePicker = () => {
+      hideTooltip();
+      picker = null;
+      pickerLayer.remove();
+    };
+    api.onCleanup(closePicker);
+
+    const liveToken = () => {
+      const form = composerForm();
+      const editor = form && editorIn(form);
+      const selection = getSelection();
+      if (
+        !editor ||
+        !editor.contains(document.activeElement) ||
+        !selection?.isCollapsed ||
+        !(selection.anchorNode instanceof Text) ||
+        !editor.contains(selection.anchorNode)
+      )
+        return null;
+      const node = selection.anchorNode;
+      const caret = selection.anchorOffset;
+      const token = shelfToken(node.data.slice(0, caret));
+      return token ? { node, caret, ...token } : null;
+    };
+    const scrollFade = (state: Picker) => {
+      const { scroll } = state;
+      const end = Math.max(0, scroll.scrollHeight - scroll.clientHeight - scroll.scrollTop);
+      setStyle(scroll, "--scroll-area-overflow-y-start", `${scroll.scrollTop}px`);
+      setStyle(scroll, "--scroll-area-overflow-y-end", `${end}px`);
+      setStyle(scroll, "--scroll-area-overflow-x-start", "0px");
+      setStyle(scroll, "--scroll-area-overflow-x-end", "0px");
+      const overflow = scroll.scrollHeight > scroll.clientHeight;
+      if (scroll.hasAttribute("data-has-overflow-y") !== overflow) {
+        scroll.toggleAttribute("data-has-overflow-y", overflow);
+        pickerRoot.toggleAttribute("data-has-overflow-y", overflow);
+      }
+    };
+    const highlightPicker = (state: Picker, index: number) => {
+      state.highlighted = index;
+      state.rows.forEach((element, i) => {
+        const active = i === index;
+        if (active) {
+          setAttr(element, "aria-selected", "true");
+          setAttr(element, "data-active", "true");
+        } else {
+          element.removeAttribute("aria-selected");
+          element.removeAttribute("data-active");
+        }
+        element.classList.toggle("bg-accent!", active);
+        element.classList.toggle("text-accent-foreground!", active);
+      });
+      state.rows[index]?.scrollIntoView({ block: "nearest" });
+      scrollFade(state);
+    };
+    const renderPicker = (state: Picker) => {
+      hideTooltip();
+      const rows = state.snippets.map((snippet) =>
+        h(
+          "div",
+          {
+            className: MENU.item,
+            attrs: { role: "option", "data-slot": "command-item" },
+          },
+          h(
+            "span",
+            { className: MENU.content },
+            h("span", {
+              className: MENU.text,
+              text: oneLine(snippet.text),
+              attrs: { "data-slot": "tooltip-trigger" },
+            }),
+            h(
+              "span",
+              { className: MENU.badge, attrs: { "data-slot": "badge" } },
+              svgIcon("library", "text-current"),
+              "Prompt",
+            ),
+          ),
+        ),
+      );
+      state.rows = rows;
+      state.list.replaceChildren(
+        h(
+          "div",
+          { className: MENU.group, attrs: { role: "group", "data-slot": "command-group" } },
+          ...rows,
+        ),
+      );
+      pickerSurface.replaceChildren(
+        rows.length
+          ? pickerRoot
+          : h(
+              "div",
+              { className: "px-5 pt-3.5 pb-7" },
+              h("p", {
+                className: "text-secondary-label text-xs",
+                text:
+                  store.kind === "unreadable"
+                    ? readOnlyMessage()
+                    : "Nothing on the shelf yet. Shelve a prompt, or import some on Settings / Plugins / Prompt shelf.",
+              }),
+            ),
+      );
+      state.scroll.scrollTop = 0;
+      highlightPicker(state, 0);
+    };
+    const syncPicker = (force = false) => {
+      const token = liveToken();
+      if (!token) dismissed = null;
+      else if (dismissed && (dismissed.node !== token.node || dismissed.start !== token.start))
+        dismissed = null;
+      if (!token || dismissed || drawer) {
+        closePicker();
+        return;
+      }
+      if (
+        picker &&
+        !force &&
+        picker.node === token.node &&
+        picker.start === token.start &&
+        picker.query === token.query
+      )
+        return;
+      const snippets = store.kind === "ready" ? rank(store.shelf.snippets, token.query) : [];
+      if (token.query !== "" && snippets.length === 0) {
+        closePicker();
+        return;
+      }
+      picker = {
+        layer: pickerLayer,
+        list: pickerList,
+        scroll: pickerScroll,
+        node: token.node,
+        start: token.start,
+        query: token.query,
+        snippets,
+        rows: [],
+        highlighted: 0,
+      };
+      document.body.append(pickerLayer);
+      renderPicker(picker);
+      position();
+    };
+    const insertFromPicker = (snippet: Snippet) => {
+      const token = liveToken();
+      closePicker();
+      let inserted = false;
+      if (token) {
+        const range = document.createRange();
+        range.setStart(token.node, token.start);
+        range.setEnd(token.node, token.caret);
+        const selection = getSelection();
+        selection?.removeAllRanges();
+        selection?.addRange(range);
+        const suffix = /^[ \n\t\r]/.test(token.node.data.slice(token.caret)) ? "" : " ";
+        try {
+          inserted = document.execCommand("insertText", false, snippet.text + suffix);
+        } catch {
+          inserted = false;
+        }
+      }
+      if (inserted) recordUse(snippet.id);
+      else api.toast("The prompt could not be inserted into the composer.", "error");
+    };
+    const pickerRow = (event: Event) => {
+      const target = event.target;
+      const row = target instanceof Element ? target.closest<HTMLElement>('[role="option"]') : null;
+      const index = row && picker ? picker.rows.indexOf(row) : -1;
+      return index >= 0 ? index : null;
+    };
+    api.listen(pickerLayer, "mousemove", (event) => {
+      const index = pickerRow(event);
+      if (picker && index !== null && picker.highlighted !== index) highlightPicker(picker, index);
+    });
+    api.listen(pickerLayer, "mousedown", preventPointer);
+    api.listen(pickerLayer, "click", (event) => {
+      const index = pickerRow(event);
+      const snippet = index !== null ? picker?.snippets[index] : null;
+      if (snippet) insertFromPicker(snippet);
+    });
+    api.listen(pickerLayer, "pointerover", (event) => {
+      const index = pickerRow(event);
+      const snippet = index !== null ? picker?.snippets[index] : null;
+      const text = event.target;
+      if (snippet && text instanceof HTMLElement && text.dataset.slot === "tooltip-trigger")
+        showTooltip(text, snippet.text);
+    });
+    api.listen(pickerLayer, "pointerout", hideTooltip);
+    api.listen(pickerScroll, "scroll", () => {
+      hideTooltip();
+      if (picker) scrollFade(picker);
+    });
+    api.listen(document, "selectionchange", () => syncPicker());
+    api.listen(document, "input", (event) => {
+      if (event.target instanceof Element && event.target.closest(`${sel.form} ${sel.editor}`))
+        syncPicker();
+    });
+    api.listen(document, "focusin", () => syncPicker());
+    api.listen(document, "focusout", () => closePicker());
 
     const shelve = () => {
       const form = composerForm();
@@ -602,6 +930,34 @@ export default definePlugin({
         if (!event.repeat && isOpenShortcut(event)) {
           if (drawer) closeDrawer(true);
           else if (!openDrawer()) return;
+          event.preventDefault();
+          event.stopImmediatePropagation();
+          return;
+        }
+        if (
+          picker &&
+          !event.ctrlKey &&
+          !event.altKey &&
+          !event.metaKey &&
+          !event.shiftKey &&
+          !event.isComposing
+        ) {
+          syncPicker();
+          const state = picker;
+          if (!state) return;
+          if (event.key === "Escape") {
+            const token = liveToken();
+            dismissed = token ? { node: token.node, start: token.start } : null;
+            closePicker();
+          } else if (state.rows.length === 0) return;
+          else if (event.key === "ArrowDown")
+            highlightPicker(state, (state.highlighted + 1) % state.rows.length);
+          else if (event.key === "ArrowUp")
+            highlightPicker(state, (state.highlighted + state.rows.length - 1) % state.rows.length);
+          else if (event.key === "Enter" || event.key === "Tab") {
+            const snippet = state.snippets[state.highlighted];
+            if (snippet) insertFromPicker(snippet);
+          } else return;
           event.preventDefault();
           event.stopImmediatePropagation();
           return;

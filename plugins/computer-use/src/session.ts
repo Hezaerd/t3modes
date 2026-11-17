@@ -21,22 +21,20 @@ import {
   type Control,
   type ControlEvent,
   type PageToBackend,
-  type Presence,
   type Refusal,
   type SessionId,
   gateOpen,
-  present,
   transition,
   viewOf,
 } from "./control.ts";
+import type { BackendIndicator, DrivingIndicator } from "./indicator.ts";
 import type { ClientInfo } from "./link.ts";
 import { RefTable } from "./outline.ts";
 import { type ActRequest, type Outcome, type ToolResult, parseToolCall, pointProblem, refsOf, renderOutcome } from "./tools.ts";
 
-export const PONG_WAIT_MS = 1500;
-
 export interface EngineIo {
   readonly desktop: Desktop;
+  readonly indicator?: BackendIndicator;
   readonly now: () => number;
   readonly sendPage: (message: BackendToPage) => void;
   /** Must finish writing before it returns: Stop is persisted before anyone hears of it. */
@@ -59,11 +57,9 @@ export const labelFor = (client: ClientInfo): AgentLabel => {
 
 export class Engine {
   private control: Control;
-  private presence: Presence = { instance: null, lastPong: 0 };
+  private indicator: DrivingIndicator | null = null;
   private queue: Promise<unknown> = Promise.resolve();
   private running: { readonly session: SessionId; readonly abort: AbortController } | null = null;
-  private pings = 0;
-  private readonly waiters = new Set<{ readonly n: number; readonly resolve: () => void }>();
   private nextSession = 1;
 
   constructor(
@@ -78,8 +74,17 @@ export class Engine {
   }
 
   dispatch(event: ControlEvent): Refusal | undefined {
-    const t = transition(this.control, this.presence, event);
+    const previous = this.control;
+    const t = transition(previous, event);
     this.control = t.control;
+    if (previous.kind === "driving" && (t.control.kind !== "driving" || t.control.holder !== previous.holder)) {
+      const handle = this.indicator;
+      this.indicator = null;
+      handle?.close();
+    }
+    if (event.type === "step" && this.control.kind === "driving" && this.control.holder === event.session) {
+      this.indicator?.setDetail(event.step);
+    }
     for (const effect of t.effects) {
       switch (effect.type) {
         case "persist-stopped":
@@ -101,18 +106,6 @@ export class Engine {
 
   page(message: PageToBackend): void {
     switch (message.t) {
-      case "pong": {
-        const fresh = message.instance !== this.presence.instance;
-        this.presence = { instance: message.instance, lastPong: this.io.now() };
-        if (fresh) this.io.sendPage({ t: "state", view: viewOf(this.control) });
-        for (const waiter of this.waiters) {
-          if (waiter.n <= message.n) {
-            this.waiters.delete(waiter);
-            waiter.resolve();
-          }
-        }
-        return;
-      }
       case "stop":
         this.io.log("Stop pressed");
         this.dispatch({ type: "stop", now: this.io.now() });
@@ -126,29 +119,41 @@ export class Engine {
 
   tick(): void {
     this.dispatch({ type: "tick", now: this.io.now() });
-    if (!this.running) return;
-    this.io.sendPage({ t: "ping", n: ++this.pings });
-    if (!present(this.presence, this.io.now())) this.running.abort.abort(new Error("no indicator"));
   }
 
-  /** Pings the page and waits for a pong sent after it. */
-  async confirmPresence(signal: AbortSignal): Promise<boolean> {
-    const n = ++this.pings;
-    const answered = new Promise<boolean>((resolve) => {
-      const finish = (present: boolean) => {
-        clearTimeout(timer);
-        signal.removeEventListener("abort", onAbort);
-        this.waiters.delete(waiter);
-        resolve(present);
+  async acquire(session: SessionId, label: AgentLabel): Promise<Refusal | undefined> {
+    if (!this.io.indicator) return { kind: "no-indicator" };
+    const refusal = this.dispatch({ type: "acquire", session, label, now: this.io.now() });
+    if (refusal || this.indicator) return refusal;
+    const generation = this.control.generation;
+    try {
+      const handle = await this.io.indicator.show({ label, detail: null });
+      if (this.control.kind !== "driving" || this.control.holder !== session || this.control.generation !== generation) {
+        handle.close();
+        return { kind: "no-indicator" };
+      }
+      this.indicator = handle;
+      const onAbort = () => {
+        if (this.indicator !== handle) return;
+        if (handle.signal.reason instanceof Error && handle.signal.reason.message === "stop") {
+          this.page({ t: "stop" });
+        } else {
+          this.running?.abort.abort(new Error("unavailable"));
+          this.dispatch({ type: "release", session });
+        }
       };
-      const waiter = { n, resolve: () => finish(true) };
-      const onAbort = () => finish(false);
-      const timer = setTimeout(() => finish(false), PONG_WAIT_MS);
-      this.waiters.add(waiter);
-      signal.addEventListener("abort", onAbort, { once: true });
-    });
-    this.io.sendPage({ t: "ping", n });
-    return answered;
+      handle.signal.addEventListener("abort", onAbort, { once: true });
+      if (handle.signal.aborted) onAbort();
+      if (!handle.live()) {
+        this.dispatch({ type: "release", session });
+        return { kind: "no-indicator" };
+      }
+      return undefined;
+    } catch (error) {
+      this.io.log(`Desktop indicator unavailable: ${String(error)}`);
+      this.dispatch({ type: "release", session });
+      return { kind: "no-indicator" };
+    }
   }
 
   enqueue<T>(work: () => Promise<T>): Promise<T> {
@@ -157,7 +162,7 @@ export class Engine {
     return result;
   }
 
-  /** Marks a batch as running so Stop and presence lapses can cut its waits short. */
+  /** Marks a batch as running so Stop and indicator loss can cut its waits short. */
   async whileRunning<T>(session: SessionId, work: (signal: AbortSignal) => Promise<T>): Promise<T> {
     const abort = new AbortController();
     this.running = { session, abort };
@@ -175,12 +180,13 @@ export class Engine {
   gateFor(session: SessionId, generation: number, signal: AbortSignal): Gate {
     return {
       signal,
+      indicatorRect: this.indicator?.rect ?? null,
       check: () => {
         const control = this.control;
-        if (gateOpen(control, this.presence, session, generation, this.io.now())) {
+        if (gateOpen(control, this.indicator, session, generation)) {
           if (signal.aborted) {
-            if (signal.reason instanceof Error && signal.reason.message === "no indicator") {
-              throw failure("no_indicator", "T3 Code stopped answering, so input was halted.");
+            if (signal.reason instanceof Error && signal.reason.message === "unavailable") {
+              throw failure("no_indicator", "The desktop indicator is unavailable, so input was halted.");
             }
             throw failure("aborted", "The call was cancelled.");
           }
@@ -189,8 +195,8 @@ export class Engine {
         if (control.kind === "stopped" || control.generation !== generation) {
           throw failure("stopped", "The user pressed Stop. Don't retry until they resume.");
         }
-        if (!present(this.presence, this.io.now())) {
-          throw failure("no_indicator", "T3 Code stopped answering, so input was halted.");
+        if (!this.indicator?.live()) {
+          throw failure("no_indicator", "The desktop indicator is unavailable, so input was halted.");
         }
         throw failure("not_holder", "This chat no longer holds control of the computer.");
       },
@@ -281,8 +287,7 @@ export class Session {
     cancel: AbortSignal,
   ): Promise<Outcome> {
     if (this.engine.state.generation !== generation) return { kind: "refused", refusal: { kind: "dropped" } };
-    if (!(await this.engine.confirmPresence(cancel))) return { kind: "refused", refusal: { kind: "no-indicator" } };
-    const refusal = this.engine.dispatch({ type: "acquire", session: this.id, label: this.label, now: this.io.now() });
+    const refusal = await this.engine.acquire(this.id, this.label);
     if (refusal) return { kind: "refused", refusal };
     if (this.engine.state.kind !== "driving" || this.engine.state.generation !== generation) {
       return { kind: "refused", refusal: { kind: "dropped" } };

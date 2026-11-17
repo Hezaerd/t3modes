@@ -1,3 +1,4 @@
+import type { ScreenRect } from "./indicator.ts";
 import { type IdentityKey, type NodeFacts, RefTable, identityKeys, renderOutline } from "./outline.ts";
 import {
   type BatchReport,
@@ -132,6 +133,7 @@ export const failure = (
  * isn't allowed. signal only shortens waits; it never decides whether input may be sent.
  */
 export interface Gate {
+  readonly indicatorRect: ScreenRect | null;
   readonly signal: AbortSignal;
   check(): void;
 }

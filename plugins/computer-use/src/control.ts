@@ -18,14 +18,7 @@ export type Control = { readonly generation: number } & (
   | { readonly kind: "stopped"; readonly at: number }
 );
 
-/** The page's liveness, from its pongs. A pong is answered in an IPC handler, never a timer. */
-export interface Presence {
-  readonly instance: string | null;
-  readonly lastPong: number;
-}
-
 export const LEASE_IDLE_MS = 120_000;
-export const PRESENCE_TTL_MS = 4_000;
 
 export type ControlEvent =
   | { readonly type: "acquire"; readonly session: SessionId; readonly label: AgentLabel; readonly now: number }
@@ -53,18 +46,14 @@ export interface Transition {
   readonly refusal?: Refusal;
 }
 
-export const present = (presence: Presence, now: number): boolean =>
-  presence.lastPong > 0 && now - presence.lastPong <= PRESENCE_TTL_MS;
-
 const same = (control: Control): Transition => ({ control, effects: [] });
 const broadcast = (control: Control): Transition => ({ control, effects: [{ type: "broadcast" }] });
 const idle = (generation: number): Control => ({ kind: "idle", generation });
 
-export function transition(control: Control, presence: Presence, event: ControlEvent): Transition {
+export function transition(control: Control, event: ControlEvent): Transition {
   const { generation } = control;
   switch (event.type) {
     case "acquire": {
-      if (!present(presence, event.now)) return { ...same(control), refusal: { kind: "no-indicator" } };
       if (control.kind === "stopped") return { ...same(control), refusal: { kind: "stopped" } };
       if (control.kind === "driving") {
         const idleMs = event.now - control.lastActivity;
@@ -117,15 +106,14 @@ export function transition(control: Control, presence: Presence, event: ControlE
  */
 export const gateOpen = (
   control: Control,
-  presence: Presence,
+  indicator: { readonly live: () => boolean } | null,
   session: SessionId,
   generation: number,
-  now: number,
 ): boolean =>
   control.kind === "driving" &&
   control.holder === session &&
   control.generation === generation &&
-  present(presence, now);
+  indicator?.live() === true;
 
 export const initialControl = (stopped: { readonly at: number } | null): Control =>
   stopped ? { kind: "stopped", generation: 0, at: stopped.at } : idle(0);
@@ -144,7 +132,6 @@ export const parseStoppedFile = (text: string | null): { readonly at: number } |
 
 // The page channel is cooperative, so it carries status and Stop, never an action.
 export type PageToBackend =
-  | { readonly t: "pong"; readonly n: number; readonly instance: string }
   | { readonly t: "stop" }
   | { readonly t: "resume" };
 
@@ -153,9 +140,7 @@ export type DrivingView =
   | { readonly mode: "driving"; readonly label: string; readonly step: string | null; readonly since: number }
   | { readonly mode: "stopped"; readonly since: number };
 
-export type BackendToPage =
-  | { readonly t: "state"; readonly view: DrivingView }
-  | { readonly t: "ping"; readonly n: number };
+export type BackendToPage = { readonly t: "state"; readonly view: DrivingView };
 
 export const viewOf = (control: Control): DrivingView => {
   switch (control.kind) {
@@ -172,16 +157,12 @@ export const parsePageMessage = (data: unknown): PageToBackend | null => {
   if (typeof data !== "object" || data === null) return null;
   const m = data as Record<string, unknown>;
   if (m.t === "stop" || m.t === "resume") return { t: m.t };
-  if (m.t === "pong" && Number.isSafeInteger(m.n) && typeof m.instance === "string" && m.instance) {
-    return { t: "pong", n: m.n as number, instance: m.instance };
-  }
   return null;
 };
 
 export const parseBackendMessage = (data: unknown): BackendToPage | null => {
   if (typeof data !== "object" || data === null) return null;
   const m = data as Record<string, unknown>;
-  if (m.t === "ping" && Number.isSafeInteger(m.n)) return { t: "ping", n: m.n as number };
   if (m.t !== "state" || typeof m.view !== "object" || m.view === null) return null;
   const v = m.view as Record<string, unknown>;
   if (v.mode === "idle") return { t: "state", view: { mode: "idle" } };
@@ -193,35 +174,4 @@ export const parseBackendMessage = (data: unknown): BackendToPage | null => {
     return { t: "state", view: { mode: "driving", label: v.label, step, since: v.since } };
   }
   return null;
-};
-
-/** A null view means no backend runs, so no agent can drive. */
-export interface PillModel {
-  readonly visible: boolean;
-  readonly tone: "driving" | "stopped";
-  readonly text: string;
-  readonly detail: string | null;
-  readonly button: { readonly text: "Stop" | "Resume"; readonly send: PageToBackend } | null;
-}
-
-export const pillModel = (view: DrivingView | null): PillModel => {
-  if (view?.mode === "driving") {
-    return {
-      visible: true,
-      tone: "driving",
-      text: `${view.label} is using your computer`,
-      detail: view.step,
-      button: { text: "Stop", send: { t: "stop" } },
-    };
-  }
-  if (view?.mode === "stopped") {
-    return {
-      visible: true,
-      tone: "stopped",
-      text: "Computer use stopped. Agents can't act until you resume.",
-      detail: null,
-      button: { text: "Resume", send: { t: "resume" } },
-    };
-  }
-  return { visible: false, tone: "driving", text: "", detail: null, button: null };
 };

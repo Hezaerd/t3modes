@@ -12,7 +12,8 @@ import {
   type WindowFacts,
   desktopPoint,
 } from "./batch.ts";
-import type { BackendToPage, Control } from "./control.ts";
+import { LEASE_IDLE_MS, type Control } from "./control.ts";
+import type { BackendIndicator, DrivingIndicator, IndicatorModel, ScreenRect } from "./indicator.ts";
 import type { NodeFacts } from "./outline.ts";
 import { Engine, Session } from "./session.ts";
 import type { InvokeAction, MouseButton, ToolResult } from "./tools.ts";
@@ -182,28 +183,57 @@ class FakeDesktop implements Desktop {
   }
 }
 
+class FakeIndicator implements BackendIndicator {
+  readonly shown: IndicatorModel[] = [];
+  readonly handles: Array<DrivingIndicator & { abort: AbortController; closed: boolean }> = [];
+  readonly details: Array<string | null> = [];
+  rect: ScreenRect = { x: 700, y: 10, width: 480, height: 44 };
+  available = true;
+  painted = true;
+  beforeShow: () => Promise<void> = async () => {};
+  onDetail: () => void = () => {};
+  async show(model: IndicatorModel): Promise<DrivingIndicator> {
+    this.shown.push(model);
+    await this.beforeShow();
+    if (!this.available) throw new Error("no paint");
+    const abort = new AbortController();
+    const handle = {
+      abort,
+      signal: abort.signal,
+      rect: this.rect,
+      closed: false,
+      live: () => !handle.closed && !abort.signal.aborted && this.painted,
+      setDetail: (detail: string | null) => {
+        this.details.push(detail);
+        this.onDetail();
+      },
+      close: () => { handle.closed = true; },
+    };
+    this.handles.push(handle);
+    return handle;
+  }
+}
+
 interface Rig {
   readonly desktop: FakeDesktop;
   readonly engine: Engine;
-  readonly page: { answering: boolean; readonly seen: BackendToPage[] };
+  readonly indicator: FakeIndicator;
   readonly persisted: string[];
   readonly clock: { offset: number };
   session(name?: string): Session;
 }
 
-const rig = (initial: Control = { kind: "idle", generation: 0 }): Rig => {
+const rig = (initial: Control = { kind: "idle", generation: 0 }, supported = true): Rig => {
   const desktop = new FakeDesktop();
-  const page = { answering: true, seen: [] as BackendToPage[] };
+  const indicator = new FakeIndicator();
   const persisted: string[] = [];
   const clock = { offset: 0 };
   const engine: Engine = new Engine(
     {
       desktop,
       now: () => Date.now() + clock.offset,
-      sendPage: (message) => {
-        page.seen.push(message);
-        if (message.t === "ping" && page.answering) queueMicrotask(() => engine.page({ t: "pong", n: message.n, instance: "page" }));
-      },
+      indicator: supported ? indicator : undefined,
+      sendPage: () => {},
       persistStopped: (at) => persisted.push(`stopped ${at}`),
       clearStopped: () => persisted.push("cleared"),
       log: () => {},
@@ -215,7 +245,7 @@ const rig = (initial: Control = { kind: "idle", generation: 0 }): Rig => {
   return {
     desktop,
     engine,
-    page,
+    indicator,
     persisted,
     clock,
     session: (name = "claude-code") => engine.openSession({ name, version: "1", cwd: "D:\\src\\webapp", pid: pid++, title: "" }),
@@ -334,17 +364,20 @@ describe("Stop", () => {
     expect(desktop.events).toEqual(["keydown Control", "keyup Control"]);
   });
 
-  it("names a presence lapse as the cause even after the pongs come back", async () => {
-    const { desktop, engine, session, clock } = rig();
+  it("halts on unavailable without persisting Stop and shows a new pill next time", async () => {
+    const { desktop, engine, session, indicator, persisted } = rig();
     const agent = session();
     desktop.beforeInput = (event) => {
-      if (event !== "type b") return;
-      clock.offset += 10_000;
-      engine.tick();
-      clock.offset -= 10_000;
+      if (event === "type b") indicator.handles[0]!.abort.abort(new Error("unavailable"));
     };
-    expect(text(await act(agent, [{ do: "type", text: "abcd" }]))).toMatch(/T3 Code stopped answering, so input was halted\. 2 of 4/);
+    expect(text(await act(agent, [{ do: "type", text: "abcd" }]))).toMatch(/indicator is unavailable.*2 of 4/);
     expect(desktop.events).toEqual(["type a", "type b"]);
+    expect(engine.state.kind).toBe("idle");
+    expect(indicator.handles[0]!.closed).toBe(true);
+    expect(persisted).toEqual([]);
+    desktop.beforeInput = () => {};
+    expect((await act(agent, [{ do: "key", keys: "x" }])).isError).toBe(false);
+    expect(indicator.handles).toHaveLength(2);
   });
 
   it("drops a batch accepted before Stop even after Resume", async () => {
@@ -385,17 +418,106 @@ describe("control between agents", () => {
     expect((await act(codex, [{ do: "key", keys: "b" }])).isError).toBe(false);
   });
 
-  it("refuses to act when the page doesn't answer, and halts when its answers lapse", async () => {
-    const { desktop, page, session, clock } = rig();
+  it("refuses and releases when showing the indicator rejects", async () => {
+    const { desktop, indicator, session, engine } = rig();
     const agent = session();
-    page.answering = false;
-    expect(text(await act(agent, [{ do: "key", keys: "a" }]))).toMatch(/isn't showing the computer-use indicator/);
-    page.answering = true;
-    desktop.beforeInput = (event) => {
-      if (event === "type b") clock.offset += 10_000;
-    };
-    expect(text(await act(agent, [{ do: "type", text: "abc" }]))).toMatch(/T3 Code stopped answering/);
+    indicator.available = false;
+    expect(text(await act(agent, [{ do: "key", keys: "a" }]))).toMatch(/needs t3mode with SDK 1.5/);
+    expect(engine.state.kind).toBe("idle");
+    expect(desktop.events).toEqual([]);
+    indicator.available = true;
+    expect((await act(agent, [{ do: "key", keys: "b" }])).isError).toBe(false);
+  });
+
+  it("halts when live() is false even before the unavailable signal arrives", async () => {
+    const { desktop, indicator, session } = rig();
+    desktop.beforeInput = (event) => { if (event === "type b") indicator.painted = false; };
+    expect(text(await act(session(), [{ do: "type", text: "abc" }]))).toMatch(/indicator is unavailable/);
     expect(desktop.events).toEqual(["type a", "type b"]);
+  });
+});
+
+describe("desktop indicator lease", () => {
+  it("shows before input and keeps one handle across batches with step details", async () => {
+    const { desktop, engine, session, indicator } = rig();
+    const agent = session();
+    indicator.beforeShow = async () => {
+      expect(engine.state.kind).toBe("driving");
+      expect(desktop.events).toEqual([]);
+    };
+    await act(agent, [{ do: "key", keys: "a" }]);
+    await act(agent, [{ do: "key", keys: "b" }]);
+    expect(indicator.shown).toEqual([{ label: "Claude \u00b7 webapp", detail: null }]);
+    expect(indicator.handles[0]!.closed).toBe(false);
+    expect(indicator.details).toEqual(["key a", "key b"]);
+    await act(agent, [{ do: "key", keys: "c" }], { release: true });
+    expect(indicator.handles[0]!.closed).toBe(true);
+    expect(engine.state.kind).toBe("idle");
+  });
+
+  it.each(["disconnect", "expiry", "Stop"])("closes on %s", async (end) => {
+    const { engine, session, indicator, clock } = rig();
+    const agent = session();
+    await act(agent, [{ do: "key", keys: "a" }]);
+    if (end === "disconnect") agent.close();
+    if (end === "expiry") { clock.offset += LEASE_IDLE_MS + 1; engine.tick(); }
+    if (end === "Stop") engine.page({ t: "stop" });
+    expect(indicator.handles[0]!.closed).toBe(true);
+    expect(engine.state.kind).toBe(end === "Stop" ? "stopped" : "idle");
+  });
+
+  it("persists an overlay Stop, halts the batch, and requires settings Resume", async () => {
+    const { desktop, engine, session, indicator, persisted } = rig();
+    const agent = session();
+    desktop.beforeInput = (event) => {
+      if (event === "type b") indicator.handles[0]!.abort.abort(new Error("stop"));
+    };
+    const pending = act(agent, [{ do: "type", text: "abcd" }, { do: "key", keys: "x" }]);
+    const queued = act(agent, [{ do: "key", keys: "y" }]);
+    expect(text(await pending)).toMatch(/The user pressed Stop/);
+    expect(text(await queued)).toMatch(/dropped and nothing was sent/);
+    expect(desktop.events).toEqual(["type a", "type b"]);
+    expect(engine.state).toMatchObject({ kind: "stopped", generation: 1 });
+    expect(persisted).toHaveLength(1);
+    expect(indicator.handles[0]!.closed).toBe(true);
+    expect(text(await act(agent, [{ do: "key", keys: "z" }]))).toMatch(/press Resume/);
+    expect(indicator.shown).toHaveLength(1);
+    engine.page({ t: "resume" });
+    expect((await act(agent, [{ do: "key", keys: "z" }])).isError).toBe(false);
+    expect(indicator.shown).toHaveLength(2);
+  });
+
+  it.each(["stop", "unavailable"])("aborts a sleeping batch on %s", async (reason) => {
+    const { desktop, engine, session, indicator, persisted } = rig();
+    const sleeping = new Promise<void>((resolve) => { indicator.onDetail = resolve; });
+    const pending = act(session(), [{ do: "wait", timeout_ms: 5000 }, { do: "key", keys: "x" }]);
+    await sleeping;
+    indicator.handles[0]!.abort.abort(new Error(reason));
+    expect((await pending).isError).toBe(true);
+    expect(desktop.events).toEqual([]);
+    expect(engine.state.kind).toBe(reason === "stop" ? "stopped" : "idle");
+    expect(persisted).toHaveLength(reason === "stop" ? 1 : 0);
+  });
+
+  it("closes a handle that arrives after the holder disconnected", async () => {
+    const { desktop, engine, session, indicator } = rig();
+    const agent = session();
+    indicator.beforeShow = async () => { agent.close(); };
+    expect((await act(agent, [{ do: "key", keys: "x" }])).isError).toBe(true);
+    expect(indicator.handles[0]!.closed).toBe(true);
+    expect(engine.state.kind).toBe("idle");
+    expect(desktop.events).toEqual([]);
+  });
+
+  it("refuses every act on an older host without showing anything", async () => {
+    const { desktop, session, indicator, engine } = rig(undefined, false);
+    const agent = session();
+    for (let i = 0; i < 2; i++) {
+      expect(text(await act(agent, [{ do: "key", keys: "x" }]))).toMatch(/needs t3mode with SDK 1.5/);
+    }
+    expect(engine.state.kind).toBe("idle");
+    expect(indicator.shown).toEqual([]);
+    expect(desktop.events).toEqual([]);
   });
 });
 

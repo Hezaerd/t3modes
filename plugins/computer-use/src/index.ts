@@ -9,6 +9,7 @@ const CSS = `
   padding: 6px 6px 6px 14px; border-radius: 999px; font: 500 13px/1.3 system-ui, sans-serif;
   color: #fff; background: #1d1d1f; box-shadow: 0 6px 24px rgb(0 0 0 / 0.35);
   border: 1px solid rgb(255 255 255 / 0.12);
+  -webkit-app-region: no-drag;
 }
 [data-computer-use-pill][hidden] { display: none; }
 [data-computer-use-pill][data-tone="stopped"] { background: #3d2a05; border-color: #f59e0b; }

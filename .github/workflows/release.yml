@@ -1,0 +1,39 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      # Pinned here, not in package.json: with a packageManager field, pnpm on the runner tries to
+      # record itself in the lockfile, and --frozen-lockfile refuses.
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm build
+      - name: Prepare release
+        id: release
+        run: node scripts/stage-release.mjs --release
+      - name: Publish all plugins
+        if: steps.release.outputs.publish == 'true'
+        run: >-
+          gh release create "${{ steps.release.outputs.tag }}" .release/*
+          --target "$GITHUB_SHA" --generate-notes --latest

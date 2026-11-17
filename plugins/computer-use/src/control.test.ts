@@ -11,6 +11,7 @@ import {
   initialControl,
   parsePageMessage,
   parseStoppedFile,
+  pillModel,
   transition,
   viewOf,
 } from "./control.ts";
@@ -133,5 +134,23 @@ describe("start state and messages", () => {
     expect(viewOf(driving.control)).toEqual({ mode: "driving", label: claude, step: "click", since: T });
     expect(viewOf({ kind: "stopped", generation: 2, at: 7 })).toEqual({ mode: "stopped", since: 7 });
     expect(viewOf(idle)).toEqual({ mode: "idle" });
+  });
+});
+
+describe("pillModel", () => {
+  it("shows who drives with Stop, and Resume once stopped", () => {
+    expect(pillModel({ mode: "driving", label: "Claude · webapp", step: "click e7", since: 1 })).toEqual({
+      visible: true,
+      tone: "driving",
+      text: "Claude · webapp is using your computer",
+      detail: "click e7",
+      button: { text: "Stop", send: { t: "stop" } },
+    });
+    expect(pillModel({ mode: "stopped", since: 1 })).toMatchObject({ visible: true, button: { text: "Resume", send: { t: "resume" } } });
+  });
+
+  it("draws nothing when idle or with no backend", () => {
+    expect(pillModel({ mode: "idle" }).visible).toBe(false);
+    expect(pillModel(null).visible).toBe(false);
   });
 });

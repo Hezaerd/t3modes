@@ -199,3 +199,34 @@ export const parseBackendMessage = (data: unknown): BackendToPage | null => {
   }
   return null;
 };
+
+/** What the in-window indicator shows. Null view: no backend is running, so no agent can drive. */
+export interface PillModel {
+  readonly visible: boolean;
+  readonly tone: "driving" | "stopped";
+  readonly text: string;
+  readonly detail: string | null;
+  readonly button: { readonly text: "Stop" | "Resume"; readonly send: PageToBackend } | null;
+}
+
+export const pillModel = (view: DrivingView | null): PillModel => {
+  if (view?.mode === "driving") {
+    return {
+      visible: true,
+      tone: "driving",
+      text: `${view.label} is using your computer`,
+      detail: view.step,
+      button: { text: "Stop", send: { t: "stop" } },
+    };
+  }
+  if (view?.mode === "stopped") {
+    return {
+      visible: true,
+      tone: "stopped",
+      text: "Computer use stopped. Agents can't act until you resume.",
+      detail: null,
+      button: { text: "Resume", send: { t: "resume" } },
+    };
+  }
+  return { visible: false, tone: "driving", text: "", detail: null, button: null };
+};

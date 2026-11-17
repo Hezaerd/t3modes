@@ -216,8 +216,8 @@ class StepRun {
 
   async input(call: () => Promise<void>): Promise<void> {
     this.ctx.gate.check();
-    this.sent += 1;
     await call();
+    this.sent += 1;
   }
 
   /** Releases may always run, after Stop too: they let go of what this step holds. */

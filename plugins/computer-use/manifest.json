@@ -1,0 +1,11 @@
+{
+  "id": "computer-use",
+  "name": "Computer use",
+  "version": "0.1.0",
+  "description": "Lets Claude and Codex see and drive the Windows desktop, with an indicator and a Stop button in T3 Code.",
+  "author": "Hezaerd",
+  "backend": "backend.cjs",
+  "mcp": "mcp.cjs",
+  "files": ["xa11y.win32-x64-msvc.node", "xa11y-LICENSE.txt"],
+  "api": 1
+}

@@ -4,7 +4,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "vp pack",
+    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && vp pack",
     "test": "vp test"
   },
   "devDependencies": {

@@ -441,6 +441,20 @@ describe("targets", () => {
     expect(desktop.events).toEqual([]);
   });
 
+  it("refuses a pointer step on an element that lies under a T3 Code window", async () => {
+    const { desktop, session } = rig();
+    const agent = session();
+    const save = await refOf(agent, "Save");
+    desktop.elements.get("w-app")!.bounds = { x: 100, y: 100, width: 400, height: 200 };
+    desktop.elements.get("save")!.bounds = { x: 120, y: 170, width: 100, height: 40 };
+    desktop.foregroundId = "w-other";
+    expect(text(await act(agent, [{ do: "click", target: { ref: save } }]))).toMatch(/on a T3 Code window, which is off limits/);
+    expect((await act(agent, [{ do: "invoke", target: { ref: save }, action: "press" }])).isError).toBe(false);
+    desktop.foregroundId = "w-app";
+    expect((await act(agent, [{ do: "click", target: { ref: save } }])).isError).toBe(false);
+    expect(desktop.events).toEqual(["press save", "move save", "down left", "up left"]);
+  });
+
   it("checks the image's window right before the first primitive, after the settle wait", async () => {
     const { desktop, session } = rig();
     const agent = session();

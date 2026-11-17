@@ -302,12 +302,14 @@ async function resolve(target: Target, ctx: BatchContext): Promise<Resolved> {
   }
   const element = (await resolveElement(target, ctx, ctx.timing.resolveMs, false))!;
   if (isOffLimits(desktop, desktop.info(element).pid)) throw failure("off_limits", "T3 Code's own window is off limits.");
+  const window = await desktop.windowOf(element);
   const aim = async (): Promise<Aim> => {
     const b = desktop.info(element).bounds;
     const at = b ? desktopPoint(Math.round(b.x + b.width / 2), Math.round(b.y + b.height / 2)) : null;
+    if (at) await refuseCoveredByT3(at, window, ctx);
     return { pointer: { kind: "element", element }, at };
   };
-  return { element, window: await desktop.windowOf(element), aim };
+  return { element, window, aim };
 }
 
 /** The lost-click rule: a pointer step into a window that just appeared waits until it is 1 s old. */

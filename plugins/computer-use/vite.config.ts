@@ -2,9 +2,7 @@ import { fileURLToPath } from "node:url";
 
 import { defineConfig } from "vite-plus";
 
-// dist/ is the plugin as t3mode installs it, flat: plugin.js (page), backend.cjs and mcp.cjs (one
-// self-contained CommonJS bundle each), xa11y's native binary and its license. The scripts end in
-// .cjs because the repo's package.json is "type": "module". scripts/copy-native.mjs adds the binary.
+// The scripts end in .cjs because the repo's package.json is "type": "module".
 
 // xa11y's native.js looks for its binary in per-platform packages, which a flat install doesn't
 // have, so the backend bundle swaps it for native-binding.cjs, which loads the binary next to it.

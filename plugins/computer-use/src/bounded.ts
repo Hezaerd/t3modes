@@ -1,4 +1,3 @@
-/** A Map that forgets its least recently set entries once it holds more than max. */
 export class BoundedMap<K, V> extends Map<K, V> {
   constructor(private readonly max: number) {
     super();

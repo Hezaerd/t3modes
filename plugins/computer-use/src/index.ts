@@ -1,6 +1,3 @@
-// The page side: the "an agent is using your computer" pill with Stop and Resume, the same
-// controls in the plugin's settings section, and pongs that tell the backend the pill can show.
-// Page messages are cooperative, so this side only ever sends pong, stop and resume.
 import { type BackendStatus, type PluginApi, definePlugin } from "@t3mode/plugin-sdk";
 
 import { type DrivingView, type PageToBackend, parseBackendMessage, pillModel } from "./control.ts";

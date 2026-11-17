@@ -1,6 +1,3 @@
-// The Desktop port on xa11y: the only module that imports it. Each input method is one native
-// call. Keys and buttons held down are journaled to held.json, so a backend killed mid-gesture
-// releases them on its next start.
 import { spawn } from "node:child_process";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 
@@ -24,7 +21,7 @@ import type { IdentityKey, NodeFacts } from "./outline.ts";
 import { BoundedMap } from "./bounded.ts";
 import { type Held, HeldJournal } from "./held.ts";
 import { encodePng } from "./png.ts";
-import type { InvokeAction, MouseButton, StepFailure } from "./tools.ts";
+import type { InvokeAction, StepFailure } from "./tools.ts";
 
 type Element = xa.Element;
 const el = (handle: ElementHandle): Element => handle as unknown as Element;

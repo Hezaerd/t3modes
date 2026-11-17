@@ -1,6 +1,3 @@
-// The pipe between tool servers (mcp.cjs) and the backend. Both sides derive its name from the
-// plugin's data folder, so there is no endpoint file to go stale: the pipe exists exactly while
-// the backend holds it.
 import { createHash } from "node:crypto";
 import * as path from "node:path";
 
@@ -18,6 +15,7 @@ const normalize = (dir: string, platform: NodeJS.Platform): string => {
   return platform === "win32" ? resolved.toLowerCase() : resolved;
 };
 
+/** Both sides derive the name from the plugin's data folder, so no endpoint file can go stale. */
 export const pipeName = (dataDir: string, platform: NodeJS.Platform): string => {
   const normalized = normalize(dataDir, platform);
   if (platform !== "win32") return path.posix.join(normalized, "link.sock");
@@ -92,7 +90,7 @@ export const parseServerFrame = (value: unknown): ServerFrame | null => {
   }
 };
 
-/** Splits a byte stream into newline-delimited JSON frames. A bad or oversized line is an error: close the link. */
+/** A bad or oversized line is an error: close the link. */
 export class FrameDecoder<F> {
   private pending = "";
   private pendingBytes = 0;

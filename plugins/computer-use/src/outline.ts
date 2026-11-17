@@ -1,7 +1,5 @@
-// Captures to outline text, and stable per-session refs. Pure: element handles are opaque here.
 import type { Ref } from "./tools.ts";
 
-/** One capture node as plain data. desktop.ts copies it out of xa11y's capture. */
 export interface NodeFacts {
   readonly parent: number | null;
   readonly role: string;

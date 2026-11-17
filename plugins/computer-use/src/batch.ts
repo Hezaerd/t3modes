@@ -1,6 +1,3 @@
-// Runs act steps against the Desktop port, and takes observations. Every native input call is
-// preceded by gate.check(), which reads live control state; composite gestures (click, chord,
-// drag, typing) are built here from single primitives so Stop lands between any two of them.
 import { type IdentityKey, type NodeFacts, RefTable, identityKeys, renderOutline } from "./outline.ts";
 import {
   type BatchReport,
@@ -46,7 +43,6 @@ export interface WindowFacts {
   readonly pid: number;
   readonly active: boolean;
   readonly bounds: Bounds | null;
-  /** When the backend first saw this window, for the lost-click rule. */
   readonly firstSeen: number;
 }
 
@@ -68,7 +64,7 @@ export type ShotSource = { readonly kind: "window"; readonly window: ElementHand
 
 export interface ImageFrame extends Shot {
   readonly id: string;
-  /** For a window image: the window and its bounds when captured, to validate points against. */
+  /** bounds is null when the window moved during the capture, so no point maps into the image. */
   readonly window: { readonly handle: ElementHandle; readonly bounds: Bounds | null } | null;
 }
 
@@ -102,7 +98,6 @@ export interface Desktop {
   windowOf(element: ElementHandle): Promise<WindowFacts | null>;
   alive(element: ElementHandle): Promise<boolean>;
   same(a: ElementHandle, b: ElementHandle): Promise<boolean>;
-  /** The window's bounds now, or null when it is gone. */
   boundsNow(window: ElementHandle): Promise<Bounds | null>;
   capture(root: ElementHandle, options: { readonly maxNodes: number; readonly timeoutMs: number }): Promise<CaptureFacts>;
   /** crop is a desktop rectangle, cut out of the full-resolution capture before scaling. */
@@ -119,7 +114,6 @@ export interface Desktop {
   open(uri: string): Promise<void>;
 }
 
-/** A step failure carried as an exception inside the runner. */
 export class StepError extends Error {
   constructor(readonly failure: StepFailure) {
     super(failure.message);
@@ -173,7 +167,6 @@ export interface BatchContext {
 
 export interface BatchResult {
   readonly report: BatchReport;
-  /** The session's new current window. */
   readonly lastWindow: WindowFacts | null;
   readonly foregroundChanged: boolean;
 }
@@ -207,7 +200,6 @@ const graphemes = (text: string): string[] => {
 
 interface Aim {
   readonly pointer: PointerTarget;
-  /** Desktop coordinates when known, for drag paths. */
   readonly at: DesktopPoint | null;
 }
 
@@ -239,7 +231,7 @@ class StepRun {
     this.sent += 1;
   }
 
-  /** Releases the latest holds, newest first. Runs after Stop too, and never throws. */
+  /** Runs after Stop too: letting go is always allowed. */
   async letGo(count = this.held.length): Promise<void> {
     for (const up of this.held.splice(this.held.length - count, count).reverse()) {
       try {
@@ -410,7 +402,6 @@ async function drag(run: StepRun, ctx: BatchContext, from: Aim, to: Aim): Promis
   }
 }
 
-/** Runs one step. Returns the window it acted in, or null for steps with no target. */
 async function runStep(step: Step, run: StepRun, ctx: BatchContext): Promise<WindowFacts | null> {
   const { desktop } = ctx;
   switch (step.do) {
@@ -544,7 +535,6 @@ export async function runBatch(steps: ReadonlyArray<Step>, ctx: BatchContext): P
   };
 }
 
-/** After a batch: wait until the window's bounds read the same twice, up to the cap. */
 export async function settleAfter(window: WindowFacts | null, ctx: Pick<BatchContext, "desktop" | "now" | "timing">, signal: AbortSignal): Promise<void> {
   if (!window) return;
   const deadline = ctx.now() + ctx.timing.settleCapMs;
@@ -591,7 +581,6 @@ async function pickWindow(request: ObserveRequest, ctx: ObserveContext): Promise
   return fg;
 }
 
-/** Desktop rectangle for a zoom given in the latest image's pixels. */
 const zoomRect = (zoom: NonNullable<ObserveRequest["zoom"]>, image: ImageFrame): Bounds => {
   const a = image.toDesktop({ x: zoom.x, y: zoom.y });
   const b = image.toDesktop({ x: Math.min(zoom.x + zoom.width, image.width), y: Math.min(zoom.y + zoom.height, image.height) });

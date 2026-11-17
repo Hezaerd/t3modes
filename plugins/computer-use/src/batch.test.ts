@@ -39,9 +39,7 @@ class FakeDesktop implements Desktop {
   readonly events: string[] = [];
   readonly finds: Array<{ selector: string; scopePid: number | null }> = [];
   foregroundId = "w-app";
-  /** Runs before an input primitive is recorded; tests press Stop from here. */
   beforeInput: (event: string) => void = () => {};
-  /** Makes an input primitive reject after it was delivered. */
   failAfter: (event: string) => boolean = () => false;
   onScreenshot: () => void = () => {};
   firstSeen = 0;
@@ -229,7 +227,6 @@ const text = (result: ToolResult): string => result.content.map((c) => (c.type =
 const act = (session: Session, steps: unknown[], extra: Record<string, unknown> = {}) =>
   session.call("act", { steps, after: "outline", ...extra }, never);
 
-/** Observes, then returns the ref the outline gave the element named `name`. */
 const refOf = async (session: Session, name: string): Promise<string> => {
   const outline = text(await session.call("observe", {}, never));
   const line = outline.split("\n").find((l) => l.includes(`"${name}"`));

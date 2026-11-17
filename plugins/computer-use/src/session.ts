@@ -1,6 +1,3 @@
-// The backend's state and its agent sessions. Engine owns Control, Presence and the one engine
-// FIFO; a Session is one tool-server connection with its own refs and latest image. backend.ts
-// wires an Engine to the pipe, the page and the files.
 import { basename } from "node:path";
 
 import {
@@ -127,7 +124,6 @@ export class Engine {
     }
   }
 
-  /** Once a second: expire an idle lease, ping the page while a batch runs, stop on a lapse. */
   tick(): void {
     this.dispatch({ type: "tick", now: this.io.now() });
     if (!this.running) return;
@@ -318,7 +314,6 @@ export class Session {
     });
   }
 
-  /** The pipe closed: the agent's chat ended. */
   close(): void {
     this.closed = true;
     for (const call of this.calls) call.abort(new Error("disconnected"));

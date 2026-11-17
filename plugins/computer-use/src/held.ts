@@ -5,7 +5,7 @@ export interface Held {
   readonly buttons: ReadonlyArray<MouseButton>;
 }
 
-/** Keys and buttons that may be down. save runs synchronously before a down call and after an up call. */
+/** save runs before each down call and after each up call that succeeds, so a killed backend leaves everything that may be down in the journal. */
 export class HeldJournal {
   private readonly keys = new Set<string>();
   private readonly buttons = new Set<MouseButton>();

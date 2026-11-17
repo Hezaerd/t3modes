@@ -1,6 +1,3 @@
-// End-to-end smoke test on the real surface: a linked computer-use plugin in a running t3mode
-// sandbox, mcp.cjs under T3 Code's exe, and a scratch WinForms window this script owns.
-//
 //   node scripts/smoke.cjs --exe "<T3 Code.exe>" --home <sandbox home> --cdp 9444 [--runs 5] [--at x,y] [--closed]
 //
 // Input goes only to the scratch window: every input batch first checks that the window is in

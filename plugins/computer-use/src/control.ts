@@ -1,6 +1,3 @@
-// Who may drive the desktop. A pure reducer: backend.ts is its only caller and performs the
-// effects it returns. The page sees only DrivingView.
-
 export type SessionId = number & { readonly __session: unique symbol };
 export type AgentLabel = string & { readonly __label: unique symbol };
 
@@ -130,7 +127,6 @@ export const gateOpen = (
   control.generation === generation &&
   present(presence, now);
 
-/** A stopped.json at start means stopped, with no exception. */
 export const initialControl = (stopped: { readonly at: number } | null): Control =>
   stopped ? { kind: "stopped", generation: 0, at: stopped.at } : idle(0);
 
@@ -146,8 +142,7 @@ export const parseStoppedFile = (text: string | null): { readonly at: number } |
   return { at: 0 };
 };
 
-// Page and backend messages. The page channel is cooperative, so it carries status and Stop, never
-// an action.
+// The page channel is cooperative, so it carries status and Stop, never an action.
 export type PageToBackend =
   | { readonly t: "pong"; readonly n: number; readonly instance: string }
   | { readonly t: "stop" }
@@ -200,7 +195,7 @@ export const parseBackendMessage = (data: unknown): BackendToPage | null => {
   return null;
 };
 
-/** What the in-window indicator shows. Null view: no backend is running, so no agent can drive. */
+/** A null view means no backend runs, so no agent can drive. */
 export interface PillModel {
   readonly visible: boolean;
   readonly tone: "driving" | "stopped";

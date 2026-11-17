@@ -1,5 +1,3 @@
-// The plugin's backend: the one process that loads xa11y and sends input. It serves tool servers
-// over a named pipe derived from its data folder, and talks status and Stop with the page.
 import { createServer } from "node:net";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";

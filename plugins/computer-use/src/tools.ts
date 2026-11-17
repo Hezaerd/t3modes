@@ -1,6 +1,3 @@
-// The tool surface: the schemas the model sees, the one parse from wire arguments into domain
-// steps, and the one rendering of results. Pure. The tool server bundles it for tools/list only;
-// the backend parses and renders with it.
 import { z } from "zod";
 
 import type { Refusal } from "./control.ts";
@@ -422,7 +419,7 @@ const zodMessage = (error: z.ZodError): string =>
     })
     .join("; ");
 
-/** The one place raw MCP arguments become domain types. The whole call is checked before any effect. */
+/** The whole call is checked before any effect. */
 export function parseToolCall(tool: string, args: unknown): ParseResult {
   try {
     const raw = args ?? {};
@@ -528,7 +525,6 @@ export const describeTarget = (target: Target): string => {
 
 const comboText = (combo: KeyCombo): string => [...combo.held, combo.key].join("+");
 
-/** A short line for the pill and for failure reports. */
 export const describeStep = (step: Step): string => {
   switch (step.do) {
     case "click":
@@ -553,8 +549,6 @@ export const describeStep = (step: Step): string => {
       return `open ${quote(step.uri, 48)}`;
   }
 };
-
-// Results.
 
 export type McpContent =
   | { readonly type: "text"; readonly text: string }

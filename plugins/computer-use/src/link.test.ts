@@ -70,6 +70,12 @@ describe("FrameDecoder", () => {
     expect(fresh.push(bytes)).toEqual(frames);
   });
 
+  it("drops a link whose frame passes the cap only once its last chunk arrives", () => {
+    const decoder = new FrameDecoder(parseClientFrame, 1024);
+    expect(decoder.push(new Uint8Array(1000).fill(0x20))).toEqual([]);
+    expect(decoder.push(bytes)).toHaveProperty("error");
+  });
+
   it("parses server frames", () => {
     expect(parseServerFrame({ t: "result", id: 2, result: { isError: false, content: [] } })).toEqual({
       t: "result",

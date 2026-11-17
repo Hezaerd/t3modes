@@ -247,6 +247,7 @@ export class Session {
     const controller = new AbortController();
     const onCancel = () => controller.abort(new Error("cancelled"));
     cancel.addEventListener("abort", onCancel);
+    if (cancel.aborted) onCancel();
     this.calls.add(controller);
     try {
       const outcome = await this.engine.enqueue(async (): Promise<Outcome> => {

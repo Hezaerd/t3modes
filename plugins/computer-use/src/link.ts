@@ -111,6 +111,7 @@ export class FrameDecoder<F> {
     const frames: F[] = [];
     for (const line of lines) {
       if (!line.trim()) continue;
+      if (Buffer.byteLength(line) > this.maxBytes) return { error: `a frame is over ${this.maxBytes} bytes` };
       let value: unknown;
       try {
         value = JSON.parse(line);

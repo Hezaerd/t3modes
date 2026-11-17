@@ -105,6 +105,9 @@ class Link {
         return renderUnreachable(problem);
       }
     }
+    if (signal.aborted) {
+      return { isError: true, content: [{ type: "text", text: "The call was cancelled. Nothing was sent." }] };
+    }
     const socket = this.socket!;
     const id = this.nextId++;
     return new Promise((resolve) => {

@@ -76,9 +76,14 @@ export async function releaseJournaled(heldPath: string): Promise<Held | null> {
     return null;
   }
   const sim = xa.inputSim();
-  for (const button of held.buttons ?? []) await quiet(() => sim.mouseUp(button), undefined);
-  for (const key of held.keys ?? []) await quiet(() => sim.keyUp(key), undefined);
-  rmSync(heldPath, { force: true });
+  const up = (release: () => Promise<void>) => quiet(() => release().then(() => true), false);
+  const buttons: Array<(typeof held.buttons)[number]> = [];
+  const keys: string[] = [];
+  for (const button of held.buttons ?? []) if (!(await up(() => sim.mouseUp(button)))) buttons.push(button);
+  for (const key of held.keys ?? []) if (!(await up(() => sim.keyUp(key)))) keys.push(key);
+  // What couldn't be released stays journaled, so the next start tries again.
+  if (buttons.length || keys.length) writeFileSync(heldPath, JSON.stringify({ buttons, keys }));
+  else rmSync(heldPath, { force: true });
   return held;
 }
 

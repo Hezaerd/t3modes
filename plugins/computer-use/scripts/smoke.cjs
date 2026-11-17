@@ -128,7 +128,6 @@ function t3MainPid() {
   return Number(execFileSync("powershell.exe", ["-NoProfile", "-Command", ps], { encoding: "utf8" }).trim());
 }
 
-/** A point on the scratch form that also lies inside T3 Code's window must be refused: the screen image has no window of its own in front. */
 async function coveredT3Refusal(mcp, form, formBounds) {
   const t3 = (await (await xa.App.byPid(t3MainPid(), { timeout: 0 })).windows())[0]?.bounds;
   const at = { x: Math.round(formBounds.x + formBounds.width * 0.7), y: Math.round(formBounds.y + formBounds.height * 0.75) };
@@ -156,7 +155,6 @@ async function coveredT3Refusal(mcp, form, formBounds) {
   );
 }
 
-/** A tool server whose client closes stdin exits, and the control it held frees at once. */
 async function clientGoneFreesControl(mcp) {
   const second = startMcp();
   await second.init();

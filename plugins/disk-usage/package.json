@@ -1,0 +1,10 @@
+{
+  "name": "t3mode-disk-usage",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "vp pack",
+    "test": "vp test"
+  }
+}

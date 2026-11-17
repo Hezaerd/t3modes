@@ -277,9 +277,6 @@ async function resolve(target: Target, ctx: BatchContext): Promise<Resolved> {
         throw failure("moved", `The window in image ${image.id} moved or closed since. Observe again.`);
       }
     }
-    if (target.at.x >= image.width || target.at.y >= image.height) {
-      throw failure("invalid", `(${target.at.x}, ${target.at.y}) is outside image ${image.id} (${image.width}x${image.height}).`);
-    }
     const at = image.toDesktop(target.at);
     const window = image.window ? await desktop.windowOf(image.window.handle) : null;
     return { pointer: { kind: "point", at }, element: null, window, at };

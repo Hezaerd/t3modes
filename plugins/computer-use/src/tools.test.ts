@@ -39,8 +39,8 @@ describe("parseToolCall", () => {
       { do: "click", target: { kind: "ref", ref: "e7" }, button: "left", count: 1, mods: [] },
       { do: "type", text: "hi", target: { kind: "sel", selector: "text_field", win: "w2" } },
       { do: "key", combo: { key: "s", held: ["Control", "Shift"] }, repeat: 1 },
-      { do: "scroll", target: { kind: "point", at: { x: 10, y: 20 } }, dx: 0, dy: 3 },
-      { do: "drag", from: { kind: "ref", ref: "e1" }, to: { kind: "point", at: { x: 5, y: 6 } } },
+      { do: "scroll", target: { kind: "point", at: { x: 10, y: 20 }, image: null }, dx: 0, dy: 3 },
+      { do: "drag", from: { kind: "ref", ref: "e1" }, to: { kind: "point", at: { x: 5, y: 6 }, image: null } },
       { do: "invoke", target: { kind: "ref", ref: "e8" }, action: "expand" },
       { do: "set", target: { kind: "sel", selector: "slider", win: null }, value: "40" },
       { do: "wait", until: { kind: "gone", target: { kind: "sel", selector: "dialog", win: null } }, ms: 5000 },
@@ -56,6 +56,15 @@ describe("parseToolCall", () => {
     expect(error(act([{ do: "click", target: { ref: "e1", win: "w1" } }]))).toMatch(/win goes with sel/);
     expect(error(act([{ do: "click", target: { sel: "button", win: "e3" } }]))).toMatch(/window ref/);
     expect(error(act([{ do: "click", target: { ref: "button" } }]))).toMatch(/isn't a ref/);
+  });
+
+  it("takes the image a point belongs to, only with x and y", () => {
+    expect(steps([{ do: "click", target: { x: 1, y: 2, image: "i4" } }])[0]).toMatchObject({
+      target: { kind: "point", at: { x: 1, y: 2 }, image: "i4" },
+    });
+    expect(steps([{ do: "click", target: { x: 1, y: 2 } }])[0]).toMatchObject({ target: { kind: "point", image: null } });
+    expect(error(act([{ do: "click", target: { ref: "e1", image: "i4" } }]))).toMatch(/image goes with x and y/);
+    expect(error(act([{ do: "click", target: { x: 1, y: 2, image: "4" } }]))).toMatch(/image ids look like i3/);
   });
 
   it("refuses points where an element is needed, and fields that don't belong to the step", () => {

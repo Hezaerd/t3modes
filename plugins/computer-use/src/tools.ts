@@ -16,7 +16,7 @@ export interface ImagePoint {
 export type Target =
   | { readonly kind: "ref"; readonly ref: Ref }
   | { readonly kind: "sel"; readonly selector: string; readonly win: Ref | null }
-  | { readonly kind: "point"; readonly at: ImagePoint };
+  | { readonly kind: "point"; readonly at: ImagePoint; readonly image: string | null };
 
 export type ElementTarget = Exclude<Target, { kind: "point" }>;
 
@@ -115,8 +115,12 @@ const TargetWire = z
     win: z.string().optional().describe("With sel: the w-ref of the window whose app to search."),
     x: z.number().optional().describe("With y: a pixel in the latest image you got."),
     y: z.number().optional(),
+    image: z
+      .string()
+      .optional()
+      .describe('With x and y: the id of the image the pixel is in, such as "i3". A point into an older image is refused.'),
   })
-  .describe("Exactly one of: ref; sel (with optional win); x and y.");
+  .describe("Exactly one of: ref; sel (with optional win); x and y (with image).");
 
 const STEP_KINDS = ["click", "type", "key", "scroll", "drag", "invoke", "set", "wait", "open"] as const;
 
@@ -174,7 +178,7 @@ Refs (e7, w2) stay the same for an element for as long as this chat runs. Points
 You rarely need this before act: act returns the new screen after every batch.`;
 
 const ACT_DESCRIPTION = `Drive the Windows desktop: run 1 to 20 steps in order, then get the new screen (image and outline) in the same result. Batch every step you can predict.
-Targets: {"ref":"e7"} from an outline; {"sel":"button[name=\\"Save\\"]","win":"w2"} (an xa11y selector; without win it searches the app of the window you last used); {"x":640,"y":212} pixels in the latest image.
+Targets: {"ref":"e7"} from an outline; {"sel":"button[name=\\"Save\\"]","win":"w2"} (an xa11y selector; without win it searches the app of the window you last used); {"x":640,"y":212,"image":"i3"} a pixel in image i3. Always pass the image id: if a newer image came since, the batch is refused before anything runs.
 Steps (do):
 - invoke {target, action}: press, toggle, expand, collapse, select, focus, scroll_into_view, activate, maximize, minimize, restore, close. No pointer, works on covered windows. Prefer it to click.
 - set {target, value}: replace a field's text or a slider's value. Prefer it to type when you replace a whole field.
@@ -209,6 +213,7 @@ const parseTarget = (wire: TargetWire, what: string): Target => {
   const forms = [wire.ref !== undefined, wire.sel !== undefined, wire.x !== undefined || wire.y !== undefined];
   if (forms.filter(Boolean).length !== 1) fail(`${what} needs exactly one of ref, sel, or x and y.`);
   if (wire.win !== undefined && wire.sel === undefined) fail(`${what}: win goes with sel only.`);
+  if (wire.image !== undefined && wire.x === undefined) fail(`${what}: image goes with x and y only.`);
   if (wire.ref !== undefined) return { kind: "ref", ref: parseRef(wire.ref, what) };
   if (wire.sel !== undefined) {
     if (!wire.sel.trim()) fail(`${what}: sel is empty.`);
@@ -220,7 +225,8 @@ const parseTarget = (wire: TargetWire, what: string): Target => {
   if (!Number.isFinite(wire.x) || !Number.isFinite(wire.y) || wire.x < 0 || wire.y < 0) {
     fail(`${what}: x and y must be pixels in the latest image.`);
   }
-  return { kind: "point", at: { x: wire.x, y: wire.y } };
+  if (wire.image !== undefined && !/^i[1-9]\d*$/.test(wire.image)) fail(`${what}: image ids look like i3.`);
+  return { kind: "point", at: { x: wire.x, y: wire.y }, image: wire.image ?? null };
 };
 
 const elementTarget = (target: Target, what: string): ElementTarget =>
@@ -432,23 +438,50 @@ export function parseToolCall(tool: string, args: unknown): ParseResult {
   }
 }
 
-/** Every ref a call names, so the session can check them all before the first effect. */
+const targetsOf = (step: Step): ReadonlyArray<Target> => {
+  switch (step.do) {
+    case "drag":
+      return [step.from, step.to];
+    case "wait":
+      return step.until.kind === "time" ? [] : [step.until.target];
+    case "type":
+      return step.target ? [step.target] : [];
+    case "key":
+    case "open":
+      return [];
+    default:
+      return [step.target];
+  }
+};
+
 export const refsOf = (call: ToolCall): ReadonlyArray<Ref> => {
   if (call.tool === "observe") return call.request.win ? [call.request.win] : [];
-  const refs: Ref[] = [];
-  const add = (target: Target | null) => {
-    if (!target) return;
-    if (target.kind === "ref") refs.push(target.ref);
-    if (target.kind === "sel" && target.win) refs.push(target.win);
-  };
-  for (const step of call.request.steps) {
-    if (step.do === "drag") {
-      add(step.from);
-      add(step.to);
-    } else if (step.do === "wait") add(step.until.kind === "time" ? null : step.until.target);
-    else if ("target" in step) add(step.target);
+  return call.request.steps.flatMap(targetsOf).flatMap((target) => {
+    if (target.kind === "ref") return [target.ref];
+    if (target.kind === "sel" && target.win) return [target.win];
+    return [];
+  });
+};
+
+/** Checks every point against the session's latest image, which a batch can't change. */
+export const pointProblem = (
+  request: ActRequest,
+  image: { readonly id: string; readonly width: number; readonly height: number } | null,
+): string | null => {
+  for (const [i, step] of request.steps.entries()) {
+    for (const target of targetsOf(step)) {
+      if (target.kind !== "point") continue;
+      const at = `Step ${i + 1} (${step.do})`;
+      if (!image) return `${at}: there is no image to point into. Observe first.`;
+      if (target.image !== null && target.image !== image.id) {
+        return `${at}: ${target.image} isn't the latest image (${image.id}). Observe again.`;
+      }
+      if (target.at.x >= image.width || target.at.y >= image.height) {
+        return `${at}: (${target.at.x}, ${target.at.y}) is outside image ${image.id} (${image.width}x${image.height}).`;
+      }
+    }
   }
-  return refs;
+  return null;
 };
 
 const quote = (text: string, max = 24): string => {

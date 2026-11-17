@@ -355,6 +355,20 @@ describe("targets", () => {
     expect(text(await act(agent, [{ do: "click", target: { x: 500, y: 20 } }]))).toMatch(/outside image/);
   });
 
+  it("refuses a point into an image that isn't the latest before any step runs", async () => {
+    const { desktop, session } = rig();
+    const agent = session();
+    expect(text(await agent.call("observe", {}, never))).toMatch(/Image i1/);
+    expect((await act(agent, [{ do: "click", target: { x: 10, y: 20, image: "i1" } }])).isError).toBe(false);
+    expect(text(await agent.call("observe", {}, never))).toMatch(/Image i2/);
+    desktop.events.length = 0;
+    const stale = await act(agent, [{ do: "key", keys: "a" }, { do: "click", target: { x: 10, y: 20, image: "i1" } }]);
+    expect(text(stale)).toMatch(/i1 isn't the latest image \(i2\)\. Observe again\..*Nothing was sent/s);
+    const outside = await act(agent, [{ do: "key", keys: "a" }, { do: "click", target: { x: 500, y: 20 } }]);
+    expect(text(outside)).toMatch(/outside image i2/);
+    expect(desktop.events).toEqual([]);
+  });
+
   it("searches the current window's app for a selector without win, and every app but T3 Code for a wait", async () => {
     const { desktop, session } = rig();
     const agent = session();

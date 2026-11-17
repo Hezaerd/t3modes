@@ -34,7 +34,7 @@ import {
 } from "./control.ts";
 import type { ClientInfo } from "./link.ts";
 import { RefTable } from "./outline.ts";
-import { type ActRequest, type Outcome, type ToolResult, parseToolCall, refsOf, renderOutcome } from "./tools.ts";
+import { type ActRequest, type Outcome, type ToolResult, parseToolCall, pointProblem, refsOf, renderOutcome } from "./tools.ts";
 
 export const PONG_WAIT_MS = 1500;
 
@@ -255,6 +255,8 @@ export class Session {
           if (observed.window) this.currentWindow = observed.window;
           return { kind: "observed", observation: observed.observation };
         }
+        const problem = pointProblem(call.request, this.latestImage);
+        if (problem) return { kind: "refused", refusal: { kind: "invalid", message: problem } };
         return this.act(call.request, generation, controller.signal);
       });
       return renderOutcome(outcome);

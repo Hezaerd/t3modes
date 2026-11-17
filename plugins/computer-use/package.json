@@ -1,0 +1,16 @@
+{
+  "name": "t3mode-computer-use",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "build": "vp pack",
+    "test": "vp test"
+  },
+  "devDependencies": {
+    "@crowecawcaw/xa11y": "0.16.0",
+    "@crowecawcaw/xa11y-win32-x64-msvc": "0.16.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
+    "zod": "4.6.7"
+  }
+}

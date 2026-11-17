@@ -11,5 +11,6 @@
     "verbatimModuleSyntax": true,
     "skipLibCheck": true
   },
-  "include": ["plugins/*/src"]
+  "include": ["plugins/*/src"],
+  "exclude": ["plugins/computer-use"]
 }

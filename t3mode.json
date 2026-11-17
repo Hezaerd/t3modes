@@ -1,5 +1,6 @@
 {
   "plugins": {
+    "computer-use": "plugins/computer-use/dist",
     "disk-usage": "plugins/disk-usage/dist",
     "prompt-shelf": "plugins/prompt-shelf/dist",
     "thread-details-collapsed": "plugins/thread-details-collapsed/dist"

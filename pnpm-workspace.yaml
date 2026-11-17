@@ -1,5 +1,11 @@
 packages:
   - plugins/*
 
+# computer-use ships xa11y's win32 x64 binary. The release job runs on Linux, so it must install
+# that platform package too.
+supportedArchitectures:
+  os: [current, win32]
+  cpu: [current, x64]
+
 minimumReleaseAgeExclude:
-  - '@t3mode/plugin-sdk@1.2.0'
+  - '@t3mode/plugin-sdk@1.4.0'

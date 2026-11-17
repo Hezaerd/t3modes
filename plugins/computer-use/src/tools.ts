@@ -156,7 +156,7 @@ const ObserveWire = z.strictObject({
     .string()
     .optional()
     .describe('The window to look at: a w-ref ("w2"), or its title, exact or a unique part of it. Default: the window you last acted on, else the active one.'),
-  scope: z.enum(["window", "screen"]).optional().describe("window (default) or the whole primary screen."),
+  scope: z.enum(["window", "screen"]).optional().describe("window (default), or every display side by side in one image."),
   zoom: z
     .strictObject({ x: z.number(), y: z.number(), width: z.number(), height: z.number() })
     .optional()

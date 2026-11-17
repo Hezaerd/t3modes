@@ -666,7 +666,7 @@ export async function observe(
       window: shotWindow ? { handle: shotWindow, bounds: steady ? boundsBefore : null } : null,
     };
   }
-  const of = request.zoom ? `zoom of ${ctx.latestImage!.id}` : source?.kind === "screen" ? "primary screen" : `window ${windowRef ?? "?"}`;
+  const of = request.zoom ? `zoom of ${ctx.latestImage!.id}` : source?.kind === "screen" ? "every display" : `window ${windowRef ?? "?"}`;
   return {
     observation: {
       image: frame ? { id: frame.id, png: frame.png, width: frame.width, height: frame.height, of } : null,

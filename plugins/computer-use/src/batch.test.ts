@@ -422,7 +422,7 @@ describe("control between agents", () => {
     const { desktop, indicator, session, engine } = rig();
     const agent = session();
     indicator.available = false;
-    expect(text(await act(agent, [{ do: "key", keys: "a" }]))).toMatch(/needs t3mode with SDK 1.5/);
+    expect(text(await act(agent, [{ do: "key", keys: "a" }]))).toMatch(/couldn.t show its computer-use indicator/);
     expect(engine.state.kind).toBe("idle");
     expect(desktop.events).toEqual([]);
     indicator.available = true;
@@ -513,7 +513,7 @@ describe("desktop indicator lease", () => {
     const { desktop, session, indicator, engine } = rig(undefined, false);
     const agent = session();
     for (let i = 0; i < 2; i++) {
-      expect(text(await act(agent, [{ do: "key", keys: "x" }]))).toMatch(/needs t3mode with SDK 1.5/);
+      expect(text(await act(agent, [{ do: "key", keys: "x" }]))).toMatch(/couldn.t show its computer-use indicator/);
     }
     expect(engine.state.kind).toBe("idle");
     expect(indicator.shown).toEqual([]);

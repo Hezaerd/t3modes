@@ -626,7 +626,7 @@ const refusalText = (refusal: Refusal | { readonly kind: "invalid"; readonly mes
     case "stopped":
       return "The user stopped computer use. Ask them to press Resume in T3 Code. Don't retry until they say so.";
     case "no-indicator":
-      return "The desktop indicator is unavailable. Computer use needs t3mode with SDK 1.5, so no input is allowed. Ask the user to check that T3 Code is open with the computer-use plugin on; don't retry in a loop.";
+      return "T3 Code couldn't show its computer-use indicator, so no input is allowed. Ask the user to check that T3 Code is open with the computer-use plugin on and an up-to-date t3mode; don't retry in a loop.";
     case "invalid":
       return `${refusal.message} Nothing was sent.`;
     case "dropped":

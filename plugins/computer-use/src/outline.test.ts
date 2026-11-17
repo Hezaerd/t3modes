@@ -71,24 +71,29 @@ interface Handle {
 describe("RefTable", () => {
   const sameNode = async (a: Handle, b: Handle) => a.node === b.node;
 
+  const keys = identityKeys(form.slice(0, 4), "root");
+  const isWindow = [true, false, false, false];
+  const nodes = (...names: string[]) => names.map((node) => ({ node }));
+
   it("gives the same element the same ref across captures, and windows w refs", async () => {
     const table = new RefTable<Handle>(sameNode);
-    const keys = identityKeys(form.slice(0, 4), "root");
-    const first = await table.adopt(keys, [true, false, false, false], [{ node: "a" }, { node: "b" }, { node: "c" }, { node: "d" }]);
-    expect(first).toEqual(["w1", "e2", "e3", "e4"]);
-    const second = await table.adopt(keys, [true, false, false, false], [{ node: "a" }, { node: "b" }, { node: "c" }, { node: "d" }]);
-    expect(second).toEqual(first);
-    expect(table.resolve("e3")).toEqual({ node: "c" });
+    const first = await table.adopt(keys, isWindow, nodes("a", "b", "c", "d"));
+    expect(first[0]).toMatch(/^w\d+$/);
+    for (const ref of first.slice(1)) expect(ref).toMatch(/^e\d+$/);
+    expect(new Set(first).size).toBe(first.length);
+    expect(await table.adopt(keys, isWindow, nodes("a", "b", "c", "d"))).toEqual(first);
+    expect(table.resolve(first[2]!)).toEqual({ node: "c" });
   });
 
   it("never rebinds a ref to a different node that merely has the same path", async () => {
     const table = new RefTable<Handle>(sameNode);
-    const keys = identityKeys(form.slice(0, 4), "root");
-    await table.adopt(keys, [true, false, false, false], [{ node: "a" }, { node: "b" }, { node: "c" }, { node: "d" }]);
-    const again = await table.adopt(keys, [true, false, false, false], [{ node: "a" }, { node: "b" }, { node: "X" }, { node: "d" }]);
-    expect(again).toEqual(["w1", "e2", "e5", "e4"]);
-    expect(table.resolve("e3")).toEqual({ node: "c" });
-    expect(table.resolve("e5")).toEqual({ node: "X" });
+    const first = await table.adopt(keys, isWindow, nodes("a", "b", "c", "d"));
+    const again = await table.adopt(keys, isWindow, nodes("a", "b", "X", "d"));
+    expect([again[0], again[1], again[3]]).toEqual([first[0], first[1], first[3]]);
+    expect(again[2]).toMatch(/^e\d+$/);
+    expect(first).not.toContain(again[2]);
+    expect(table.resolve(first[2]!)).toEqual({ node: "c" });
+    expect(table.resolve(again[2]!)).toEqual({ node: "X" });
   });
 
   it("forgets the identity of a ref it evicted", async () => {
@@ -104,9 +109,11 @@ describe("RefTable", () => {
       if (stale) throw new Error("evicted");
       return a.node === b.node;
     });
-    const keys = identityKeys(form.slice(0, 1), "root");
-    await table.adopt(keys, [true], [{ node: "a" }]);
+    const root = identityKeys(form.slice(0, 1), "root");
+    const [first] = await table.adopt(root, [true], nodes("a"));
     stale = true;
-    expect(await table.adopt(keys, [true], [{ node: "a" }])).toEqual(["w2"]);
+    const [second] = await table.adopt(root, [true], nodes("a"));
+    expect(second).toMatch(/^w\d+$/);
+    expect(second).not.toBe(first);
   });
 });

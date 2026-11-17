@@ -1,11 +1,11 @@
 // End-to-end smoke test on the real surface: a linked computer-use plugin in a running t3mode
 // sandbox, mcp.cjs under T3 Code's exe, and a scratch WinForms window this script owns.
 //
-//   node scripts/smoke.cjs --exe "<T3 Code.exe>" --home <sandbox home> --cdp 9444 [--runs 5] [--closed]
+//   node scripts/smoke.cjs --exe "<T3 Code.exe>" --home <sandbox home> --cdp 9444 [--runs 5] [--at x,y] [--closed]
 //
 // Input goes only to the scratch window: every input batch first checks that the window is in
 // front and that the point it clicks is on it, and skips input otherwise. With --closed it only
-// checks the refusal while T3 Code isn't running.
+// checks the refusal while T3 Code isn't running. --at places the scratch window (logical pixels).
 "use strict";
 const { spawn, execFileSync } = require("node:child_process");
 const fs = require("node:fs");
@@ -98,7 +98,7 @@ function startForm() {
     script,
     `Add-Type -AssemblyName System.Windows.Forms
 $f = New-Object Windows.Forms.Form
-$f.Text = '${TITLE}'; $f.Width = 460; $f.Height = 220; $f.TopMost = $true; $f.StartPosition = 'CenterScreen'
+$f.Text = '${TITLE}'; $f.Width = 460; $f.Height = 220; $f.TopMost = $true; ${args.at ? `$f.StartPosition = 'Manual'; $f.Location = New-Object Drawing.Point(${args.at})` : "$f.StartPosition = 'CenterScreen'"}
 $tb = New-Object Windows.Forms.TextBox; $tb.AccessibleName = 'Smoke field'; $tb.Left = 20; $tb.Top = 20; $tb.Width = 400; $tb.MaxLength = 2000
 $b = New-Object Windows.Forms.Button; $b.Text = 'Save smoke'; $b.Left = 20; $b.Top = 70; $b.Width = 160; $b.Height = 40
 $b.Add_Click({ Add-Content -Path '${outFile}' -Value ("clicked:" + $tb.Text) })
@@ -176,14 +176,16 @@ async function main() {
     await sleep(300);
     check(!pressByRef.isError && formLog().includes("clicked:via selector"), `act invoke press by ref: form logged ${JSON.stringify(formLog())}`);
 
-    const fg = await xa.App.foreground({ timeout: 0 }).catch(() => null);
-    const button = await app.locator('button[name="Save smoke"]').element();
-    const b = button.bounds;
+    const fieldValue = async () => (await app.locator("text_field").element()).value ?? "";
+    const formInFront = async () => (await xa.App.foreground({ timeout: 0 }).catch(() => null))?.pid === form.pid;
+    const centerOf = (r) => ({ x: r.x + r.width / 2, y: r.y + r.height / 2 });
+    const center = centerOf((await app.locator('button[name="Save smoke"]').element()).bounds);
+    const fieldCenter = centerOf((await app.locator("text_field").element()).bounds);
     const w = (await app.windows())[0].bounds;
-    const center = { x: b.x + b.width / 2, y: b.y + b.height / 2 };
-    const inFront = fg?.pid === form.pid && windowPidAt(center.x, center.y) === form.pid;
-    if (!inFront) {
-      console.log(`skip input: the scratch window isn't in front (foreground pid ${fg?.pid}, form ${form.pid})`);
+    const underButton = windowPidAt(center.x, center.y);
+    const underField = windowPidAt(fieldCenter.x, fieldCenter.y);
+    if (underButton !== form.pid || underField !== form.pid) {
+      console.log(`skip input: the scratch window isn't under its own controls (pids ${underButton}, ${underField}; form ${form.pid})`);
       failures += 1;
     } else {
       const scale = Number(imageSize[2]) / w.width;
@@ -191,8 +193,12 @@ async function main() {
       const before = formLog().length;
       const click = await mcp.call("act", { steps: [{ do: "click", target: point }], after: "none" });
       await sleep(400);
-      check(!click.isError && formLog().length === before + 1, `act click by image point (${point.x}, ${point.y}): ${click.text.split("\n")[0]}`);
-
+      check(!click.isError && formLog().length === before + 1, `act click by image point (${point.x}, ${point.y}): ${click.text.split("\n")[0]}, form logged ${JSON.stringify(formLog().at(-1))}`);
+    }
+    if (!(await formInFront())) {
+      console.log(`skip typing: the scratch window isn't the active window`);
+      failures += 1;
+    } else {
       const typed = await mcp.call("act", {
         steps: [
           { do: "set", target: { ref: fieldRef }, value: "" },
@@ -202,17 +208,22 @@ async function main() {
       });
       check(!typed.isError && /value="hello smoke"/.test(typed.text), `act type into the field, read back: ${/value="[^"]*"/.exec(typed.text)?.[0]}`);
 
-      const long = "abcdefghij".repeat(30);
+      const chord = (await formInFront())
+        ? await mcp.call("act", { steps: [{ do: "key", keys: "end" }, { do: "key", keys: "shift+home" }, { do: "type", text: "chord ok" }], after: "outline" })
+        : { isError: true, text: "skipped: the scratch window isn't the active window" };
+      check(!chord.isError && /value="chord ok"/.test(chord.text), `act key end, shift+home, then type replaces the text: ${/value="[^"]*"/.exec(chord.text)?.[0] ?? chord.text}`);
+
+      const long = "abcdefghij".repeat(150);
       await mcp.call("act", { steps: [{ do: "set", target: { ref: fieldRef }, value: "" }], after: "none" });
+      if (!(await formInFront())) throw new Error("the scratch window lost the foreground; not typing");
       const pending = mcp.call("act", { steps: [{ do: "type", target: { ref: fieldRef }, text: long }], after: "outline" });
       let pressed = false;
-      for (let i = 0; i < 40 && !pressed; i++) {
-        await sleep(50);
-        const state = await pill();
-        if (state && !state.hidden && state.button === "Stop" && i >= 4) pressed = await pressPillButton("Stop");
+      for (let i = 0; i < 400 && !pressed; i++) {
+        await sleep(10);
+        if ((await fieldValue()).length > 0) pressed = await pressPillButton("Stop");
       }
       const stopped = await pending;
-      const value = (await app.locator("text_field").element()).value ?? "";
+      const value = await fieldValue();
       check(pressed, "pressed Stop in the pill over CDP while typing");
       check(stopped.isError && /The user pressed Stop/.test(stopped.text), `typing batch reported: ${stopped.text.split("\n")[0]}`);
       check(value.length > 0 && value.length < long.length && long.startsWith(value), `typing halted mid-text: ${value.length} of ${long.length} characters in the field`);

@@ -20,7 +20,7 @@ The plugin registers a tool server, `t3mode-computer-use`, with Claude and Codex
 - **Windows x64 only.** On other systems the plugin does nothing, and the tools say so.
 - **T3 Code must be open.** Input comes from the plugin's backend, which runs only while T3 Code runs with the plugin on. With T3 Code closed, in safe mode, or with the plugin off, the tools refuse. So no agent drives without the pill on screen. That includes agents in a terminal, because the tools are registered for every Claude and Codex session on the machine.
 - **T3 Code is off limits.** Agents can't press its buttons or type into it, so they can't approve their own prompts or press Stop.
-- **Windows that run as administrator** don't take input from it, and neither does anything else while such a window, a UAC prompt, or a Windows Security prompt is in front. The tool still reports the input as sent, because Windows doesn't say otherwise.
+- **Some windows don't take its input.** Windows drops input aimed at a window that runs as administrator, and a system prompt (a UAC or firewall prompt) can cover a whole screen and catch clicks meant for windows under it. The tool still reports such input as sent, because Windows doesn't say otherwise; the after-state shows whether anything changed.
 - **Points are tied to the latest image.** If its window moved or closed, a step that points into it is refused before anything is sent.
 
 It needs a t3mode build with plugin backends (plugin SDK 1.4.0). It ships xa11y's native binary, under its MIT license in `xa11y-LICENSE.txt`.

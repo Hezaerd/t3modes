@@ -23,6 +23,20 @@ function gh(args, allowMissing = false) {
   throw new Error(`gh ${args.join(" ")} failed\n${result.stderr.trim()}`);
 }
 
+// The manifest's `backend` and `mcp` scripts and its `files`, which t3mode downloads as
+// `<id>.<name>` next to the manifest and plugin.js.
+function programFiles(route, manifest) {
+  const names = [manifest.backend, manifest.mcp, ...(manifest.files ?? [])].filter(
+    (name) => name !== undefined,
+  );
+  for (const name of names) {
+    if (typeof name !== "string" || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(name)) {
+      throw new Error(`${route}/manifest.json names an invalid file ${JSON.stringify(name)}.`);
+    }
+  }
+  return [...new Set(names)];
+}
+
 function main() {
   const args = process.argv.slice(2);
   if (args.length > 1 || (args.length === 1 && args[0] !== "--release")) {
@@ -48,12 +62,13 @@ function main() {
     ) {
       throw new Error(`Invalid relative POSIX route for ${id}: ${JSON.stringify(route)}.`);
     }
-    for (const file of ["manifest.json", "plugin.js"]) {
-      if (!statSync(join(root, route, file)).isFile()) {
+    const manifest = JSON.parse(readFileSync(join(root, route, "manifest.json"), "utf8"));
+    const files = ["manifest.json", "plugin.js", ...programFiles(route, manifest)];
+    for (const file of files) {
+      if (!statSync(join(root, route, file), { throwIfNoEntry: false })?.isFile()) {
         throw new Error(`${route}/${file} must be a file.`);
       }
     }
-    const manifest = JSON.parse(readFileSync(join(root, route, "manifest.json"), "utf8"));
     if (manifest.id !== id) {
       throw new Error(
         `${route}/manifest.json has id ${JSON.stringify(manifest.id)}; expected ${JSON.stringify(id)}.`,
@@ -62,18 +77,20 @@ function main() {
     if (typeof manifest.version !== "string" || !manifest.version) {
       throw new Error(`${route}/manifest.json must contain a version string.`);
     }
-    plugins.push({ id, route, version: manifest.version });
+    plugins.push({ id, route, version: manifest.version, files });
   }
 
   rmSync(staging, { recursive: true, force: true });
   mkdirSync(staging);
   copyFileSync(join(root, "t3mode.json"), join(staging, "t3mode.json"));
-  for (const { id, route } of plugins) {
-    for (const file of ["manifest.json", "plugin.js"]) {
+  let staged = 1;
+  for (const { id, route, files } of plugins) {
+    for (const file of files) {
       copyFileSync(join(root, route, file), join(staging, `${id}.${file}`));
+      staged += 1;
     }
   }
-  console.log(`Staged ${1 + plugins.length * 2} files in .release/.`);
+  console.log(`Staged ${staged} files in .release/.`);
   if (!args.includes("--release")) return;
 
   const sha = process.env.GITHUB_SHA;

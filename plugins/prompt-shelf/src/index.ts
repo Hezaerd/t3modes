@@ -634,20 +634,19 @@ export default definePlugin({
       { className: MENU.root, attrs: { role: "presentation" } },
       pickerScroll,
     );
-    pickerLayer.append(
-      h(
-        "div",
-        {
-          className: MENU.surface,
-          attrs: {
-            "data-composer-banner-surface": "attached",
-            "data-variant": "default",
-            "data-composer-command-drawer": "true",
-          },
+    const pickerSurface = h(
+      "div",
+      {
+        className: MENU.surface,
+        attrs: {
+          "data-composer-banner-surface": "attached",
+          "data-variant": "default",
+          "data-composer-command-drawer": "true",
         },
-        pickerRoot,
-      ),
+      },
+      pickerRoot,
     );
+    pickerLayer.append(pickerSurface);
 
     const tooltip = api.element("div");
     tooltip.className = MENU.tooltipPositioner;
@@ -786,23 +785,26 @@ export default definePlugin({
       );
       state.rows = rows;
       state.list.replaceChildren(
+        h(
+          "div",
+          { className: MENU.group, attrs: { role: "group", "data-slot": "command-group" } },
+          ...rows,
+        ),
+      );
+      pickerSurface.replaceChildren(
         rows.length
-          ? h(
+          ? pickerRoot
+          : h(
               "div",
-              {
-                className: MENU.group,
-                attrs: { role: "group", "data-slot": "command-group" },
-              },
-              ...rows,
-            )
-          : h("div", {
-              className: "px-2 py-1.5 text-xs text-muted-foreground",
-              attrs: { "data-slot": "command-empty" },
-              text:
-                store.kind === "unreadable"
-                  ? readOnlyMessage()
-                  : "Nothing on the shelf yet. Shelve a prompt, or import some on Settings / Plugins / Prompt shelf.",
-            }),
+              { className: "px-5 pt-3.5 pb-7" },
+              h("p", {
+                className: "text-secondary-label text-xs",
+                text:
+                  store.kind === "unreadable"
+                    ? readOnlyMessage()
+                    : "Nothing on the shelf yet. Shelve a prompt, or import some on Settings / Plugins / Prompt shelf.",
+              }),
+            ),
       );
       state.scroll.scrollTop = 0;
       highlightPicker(state, 0);

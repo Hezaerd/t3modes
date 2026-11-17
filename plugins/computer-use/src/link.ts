@@ -42,6 +42,10 @@ export type ServerFrame =
   | { readonly t: "result"; readonly id: number; readonly result: ToolResult }
   | { readonly t: "bye"; readonly reason: string };
 
+/** A tool server sends arguments; the backend sends screenshots, so its frames may be far larger. */
+export const MAX_CLIENT_FRAME_BYTES = 1 << 20;
+export const MAX_SERVER_FRAME_BYTES = 64 << 20;
+
 export const encodeFrame = (frame: ClientFrame | ServerFrame): string => JSON.stringify(frame) + "\n";
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -88,14 +92,21 @@ export const parseServerFrame = (value: unknown): ServerFrame | null => {
   }
 };
 
-/** Splits a byte stream into newline-delimited JSON frames. A bad line is an error: close the link. */
+/** Splits a byte stream into newline-delimited JSON frames. A bad or oversized line is an error: close the link. */
 export class FrameDecoder<F> {
   private pending = "";
+  private pendingBytes = 0;
   private readonly utf8 = new TextDecoder();
 
-  constructor(private readonly parse: (value: unknown) => F | null) {}
+  constructor(
+    private readonly parse: (value: unknown) => F | null,
+    private readonly maxBytes: number,
+  ) {}
 
   push(chunk: Uint8Array): ReadonlyArray<F> | { readonly error: string } {
+    const lastNewline = chunk.lastIndexOf(0x0a);
+    this.pendingBytes = lastNewline < 0 ? this.pendingBytes + chunk.length : chunk.length - lastNewline - 1;
+    if (this.pendingBytes > this.maxBytes) return { error: `a frame is over ${this.maxBytes} bytes` };
     this.pending += this.utf8.decode(chunk, { stream: true });
     const lines = this.pending.split("\n");
     this.pending = lines.pop() ?? "";

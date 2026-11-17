@@ -42,7 +42,7 @@ describe("FrameDecoder", () => {
 
   it("reassembles frames split anywhere, even inside a UTF-8 character", () => {
     for (const cut of [1, 7, bytes.indexOf(0xc3) + 1, bytes.length - 1]) {
-      const decoder = new FrameDecoder(parseClientFrame);
+      const decoder = new FrameDecoder(parseClientFrame, 1 << 20);
       const first = decoder.push(bytes.subarray(0, cut));
       const second = decoder.push(bytes.subarray(cut));
       expect([...(first as ClientFrame[]), ...(second as ClientFrame[])]).toEqual(frames);
@@ -50,14 +50,24 @@ describe("FrameDecoder", () => {
   });
 
   it("returns several frames from one chunk", () => {
-    expect(new FrameDecoder(parseClientFrame).push(bytes)).toEqual(frames);
+    expect(new FrameDecoder(parseClientFrame, 1 << 20).push(bytes)).toEqual(frames);
   });
 
   it("rejects junk and wrong shapes", () => {
-    expect(new FrameDecoder(parseClientFrame).push(new TextEncoder().encode("nope\n"))).toHaveProperty("error");
-    expect(new FrameDecoder(parseClientFrame).push(new TextEncoder().encode('{"t":"call","id":-1}\n'))).toHaveProperty(
+    expect(new FrameDecoder(parseClientFrame, 1 << 20).push(new TextEncoder().encode("nope\n"))).toHaveProperty("error");
+    expect(new FrameDecoder(parseClientFrame, 1 << 20).push(new TextEncoder().encode('{"t":"call","id":-1}\n'))).toHaveProperty(
       "error",
     );
+  });
+
+  it("drops a link whose unfinished frame grows past the cap", () => {
+    const decoder = new FrameDecoder(parseClientFrame, 1024);
+    expect(decoder.push(bytes)).toEqual(frames);
+    expect(decoder.push(new Uint8Array(1000).fill(0x20))).toEqual([]);
+    expect(decoder.push(new Uint8Array(100).fill(0x20))).toHaveProperty("error");
+    const fresh = new FrameDecoder(parseClientFrame, 1024);
+    expect(fresh.push(new Uint8Array(900).fill(0x20))).toEqual([]);
+    expect(fresh.push(bytes)).toEqual(frames);
   });
 
   it("parses server frames", () => {

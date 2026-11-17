@@ -8,8 +8,9 @@ import { defineBackend } from "@t3mode/plugin-sdk";
 
 import { initialControl, parsePageMessage, parseStoppedFile, viewOf } from "./control.ts";
 import { loadDesktop, releaseJournaled } from "./desktop.ts";
-import { type ServerFrame, FrameDecoder, LINK_VERSION, encodeFrame, parseClientFrame, pipeName } from "./link.ts";
-import { Engine, type Session } from "./session.ts";
+import { pipeName } from "./link.ts";
+import { serveConnection } from "./serve.ts";
+import { Engine } from "./session.ts";
 
 const readText = (path: string): string | null => {
   try {
@@ -51,56 +52,9 @@ export default defineBackend({
     setInterval(() => engine.tick(), 1000);
 
     const pipe = pipeName(api.dataDir, process.platform);
-    const server = createServer((socket) => {
-      const decoder = new FrameDecoder(parseClientFrame);
-      const calls = new Map<number, AbortController>();
-      let session: Session | null = null;
-      const write = (frame: ServerFrame) => {
-        if (!socket.destroyed) socket.write(encodeFrame(frame));
-      };
-      socket.on("data", (chunk) => {
-        const frames = decoder.push(chunk);
-        if ("error" in frames) {
-          api.log("warn", `Dropped a tool server: ${frames.error}`);
-          socket.destroy();
-          return;
-        }
-        for (const frame of frames) {
-          if (frame.t === "hello") {
-            if (frame.v !== LINK_VERSION) {
-              write({ t: "bye", reason: `protocol v${LINK_VERSION} required` });
-              socket.end();
-              return;
-            }
-            session ??= engine.openSession(frame.client);
-            api.log("info", `Tool server connected: ${session.label} (pid ${frame.client.pid})`);
-            write({ t: "welcome", v: LINK_VERSION });
-          } else if (frame.t === "call") {
-            if (!session) {
-              socket.destroy();
-              return;
-            }
-            const abort = new AbortController();
-            calls.set(frame.id, abort);
-            const id = frame.id;
-            void session.call(frame.tool, frame.args, abort.signal).then((result) => {
-              calls.delete(id);
-              write({ t: "result", id, result });
-            });
-          } else {
-            calls.get(frame.id)?.abort(new Error("cancelled"));
-          }
-        }
-      });
-      socket.on("error", () => {});
-      socket.on("close", () => {
-        for (const abort of calls.values()) abort.abort(new Error("disconnected"));
-        if (session) {
-          api.log("info", `Tool server left: ${session.label}`);
-          session.close();
-        }
-      });
-    });
+    const server = createServer((socket) =>
+      serveConnection(socket, (client) => engine.openSession(client), (level, message) => api.log(level, message)),
+    );
     await new Promise<void>((resolve, reject) => {
       server.once("error", reject);
       server.listen(pipe, () => resolve());

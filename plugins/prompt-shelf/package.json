@@ -1,0 +1,16 @@
+{
+  "name": "t3mode-prompt-shelf",
+  "private": true,
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "vp pack",
+    "test": "vp test",
+    "typecheck": "tsc"
+  },
+  "devDependencies": {
+    "@t3mode/plugin-sdk": "^1.1.0",
+    "typescript": "5.9.3",
+    "vite-plus": "1.4.0"
+  }
+}

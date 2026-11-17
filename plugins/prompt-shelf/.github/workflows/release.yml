@@ -1,0 +1,53 @@
+# Bump "version" in manifest.json and push to main: if no release has that version yet, this
+# builds the plugin and publishes release v<version> with dist/manifest.json and dist/plugin.js.
+name: Release
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check whether this version has a release
+        id: version
+        run: |
+          version="$(node -p "require('./manifest.json').version")"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          if gh release view "v$version" > /dev/null 2>&1; then
+            echo "released=true" >> "$GITHUB_OUTPUT"
+            echo "v$version is already released. Bump the version in manifest.json to release."
+          else
+            echo "released=false" >> "$GITHUB_OUTPUT"
+          fi
+      # Pinned here, not in package.json: with a packageManager field, pnpm on the runner tries to
+      # record itself in the lockfile, and --frozen-lockfile refuses.
+      - uses: pnpm/action-setup@v4
+        if: steps.version.outputs.released == 'false'
+        with:
+          version: 12.14.0
+      - uses: actions/setup-node@v4
+        if: steps.version.outputs.released == 'false'
+        with:
+          node-version: 24
+          cache: pnpm
+      - if: steps.version.outputs.released == 'false'
+        run: pnpm install --frozen-lockfile
+      - if: steps.version.outputs.released == 'false'
+        run: pnpm build
+      - name: Publish v${{ steps.version.outputs.version }}
+        if: steps.version.outputs.released == 'false'
+        run: >-
+          gh release create "v${{ steps.version.outputs.version }}" dist/manifest.json dist/plugin.js
+          --target "$GITHUB_SHA" --title "v${{ steps.version.outputs.version }}" --generate-notes

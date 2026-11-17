@@ -181,7 +181,10 @@ export class Engine {
       signal,
       check: () => {
         const control = this.control;
-        if (gateOpen(control, this.presence, session, generation, this.io.now())) return;
+        if (gateOpen(control, this.presence, session, generation, this.io.now())) {
+          if (signal.aborted) throw failure("aborted", "The call was cancelled.");
+          return;
+        }
         if (control.kind === "stopped" || control.generation !== generation) {
           throw failure("stopped", "The user pressed Stop. Don't retry until they resume.");
         }

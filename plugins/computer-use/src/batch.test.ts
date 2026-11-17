@@ -287,6 +287,18 @@ describe("Stop", () => {
     expect(desktop.events.filter((e) => e === "down left")).toHaveLength(1);
   });
 
+  it("sends nothing more once the call is cancelled", async () => {
+    const { desktop, session } = rig();
+    const agent = session();
+    const cancel = new AbortController();
+    desktop.beforeInput = (event) => {
+      if (event === "type c") cancel.abort(new Error("cancelled"));
+    };
+    const result = await agent.call("act", { steps: [{ do: "type", text: "abcdefgh" }], after: "none" }, cancel.signal);
+    expect(desktop.events).toEqual(["type a", "type b", "type c"]);
+    expect(text(result)).toMatch(/The call was cancelled\. 3 of 8 characters were typed\./);
+  });
+
   it("drops a batch accepted before Stop even after Resume", async () => {
     const { desktop, engine, session } = rig();
     const first = session();

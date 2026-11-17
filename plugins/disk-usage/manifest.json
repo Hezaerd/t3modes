@@ -1,0 +1,8 @@
+{
+  "id": "disk-usage",
+  "name": "Disk usage",
+  "version": "1.0.0",
+  "description": "Shows how full each local drive is in the thread details card, next to the usage limits.",
+  "author": "Hezaerd",
+  "api": 1
+}

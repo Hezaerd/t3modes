@@ -4,6 +4,7 @@ My collection of [t3mode](https://github.com/Hezaerd/t3mode) plugins.
 
 | Plugin | What it does |
 |---|---|
+| [Disk usage](plugins/disk-usage) | Shows how full each local drive is in the thread details card. |
 | [Prompt shelf](plugins/prompt-shelf) | A shelf of reusable prompts next to the composer's Stash. |
 | [Thread details collapsed](plugins/thread-details-collapsed) | Closes the thread details card when you open a thread. |
 

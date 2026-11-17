@@ -201,12 +201,17 @@ const graphemes = (text: string): string[] => {
   return Array.from(segmenter.segment(text), (s) => s.segment);
 };
 
-interface Resolved {
+interface Aim {
   readonly pointer: PointerTarget;
+  /** Desktop coordinates when known, for drag paths. */
+  readonly at: DesktopPoint | null;
+}
+
+interface Resolved {
   readonly element: ElementHandle | null;
   readonly window: WindowFacts | null;
-  /** Desktop coordinates when known up front, for drag paths. */
-  readonly at: DesktopPoint | null;
+  /** Runs after the settle wait, right before the first primitive, so what it checks still holds when input starts. */
+  readonly aim: () => Promise<Aim>;
 }
 
 /** Counts the native input calls a step sends, so a failure can say what was delivered. */
@@ -283,22 +288,26 @@ async function resolve(target: Target, ctx: BatchContext): Promise<Resolved> {
   if (target.kind === "point") {
     const image = ctx.latestImage;
     if (!image) throw failure("no_image", "There is no image to point into. Observe first.");
-    if (image.window) {
-      const now = await desktop.boundsNow(image.window.handle);
-      if (!sameBounds(now, image.window.bounds)) {
+    const shown = image.window;
+    const window = shown ? await desktop.windowOf(shown.handle) : null;
+    const aim = async (): Promise<Aim> => {
+      if (shown && !sameBounds(await desktop.boundsNow(shown.handle), shown.bounds)) {
         throw failure("moved", `The window in image ${image.id} moved or closed since. Observe again.`);
       }
-    }
-    const at = image.toDesktop(target.at);
-    const window = image.window ? await desktop.windowOf(image.window.handle) : null;
-    return { pointer: { kind: "point", at }, element: null, window, at };
+      const at = image.toDesktop(target.at);
+      await refuseCoveredByT3(at, window, ctx);
+      return { pointer: { kind: "point", at }, at };
+    };
+    return { element: null, window, aim };
   }
   const element = (await resolveElement(target, ctx, ctx.timing.resolveMs, false))!;
-  const info = desktop.info(element);
-  if (isOffLimits(desktop, info.pid)) throw failure("off_limits", "T3 Code's own window is off limits.");
-  const b = info.bounds;
-  const at = b ? desktopPoint(Math.round(b.x + b.width / 2), Math.round(b.y + b.height / 2)) : null;
-  return { pointer: { kind: "element", element }, element, window: await desktop.windowOf(element), at };
+  if (isOffLimits(desktop, desktop.info(element).pid)) throw failure("off_limits", "T3 Code's own window is off limits.");
+  const aim = async (): Promise<Aim> => {
+    const b = desktop.info(element).bounds;
+    const at = b ? desktopPoint(Math.round(b.x + b.width / 2), Math.round(b.y + b.height / 2)) : null;
+    return { pointer: { kind: "element", element }, at };
+  };
+  return { element, window: await desktop.windowOf(element), aim };
 }
 
 /** The lost-click rule: a pointer step into a window that just appeared waits until it is 1 s old. */
@@ -318,18 +327,21 @@ async function refuseKeysIntoT3(ctx: BatchContext): Promise<void> {
   }
 }
 
-async function refusePointIntoT3(resolved: Resolved, ctx: BatchContext): Promise<void> {
-  if (resolved.pointer.kind !== "point") return;
-  const fg = await ctx.desktop.foreground();
-  if (fg && isOffLimits(ctx.desktop, fg.pid) && inside(fg.bounds, resolved.pointer.at)) {
-    throw failure("off_limits", "That point is on T3 Code's window, which is off limits.");
+/** xa11y has no hit test, so a point on a T3 Code window is safe only when the window it was aimed at is in front. */
+async function refuseCoveredByT3(at: DesktopPoint, own: WindowFacts | null, ctx: BatchContext): Promise<void> {
+  const { desktop } = ctx;
+  const fg = await desktop.foreground();
+  if (own && fg && fg.key === own.key && !isOffLimits(desktop, own.pid)) return;
+  const windows = await desktop.windows();
+  if (windows.some((w) => isOffLimits(desktop, w.pid) && inside(w.bounds, at))) {
+    throw failure("off_limits", "That point is on a T3 Code window, which is off limits.");
   }
 }
 
 async function click(
   run: StepRun,
   ctx: BatchContext,
-  resolved: Resolved,
+  aim: Aim,
   button: MouseButton,
   count: number,
   mods: ReadonlyArray<string>,
@@ -337,7 +349,7 @@ async function click(
   const { desktop } = ctx;
   try {
     for (const mod of mods) await run.hold(() => desktop.keyDown(mod), () => desktop.keyUp(mod));
-    await run.input(() => desktop.moveTo(resolved.pointer));
+    await run.input(() => desktop.moveTo(aim.pointer));
     for (let i = 0; i < count; i++) {
       await run.hold(() => desktop.mouseDown(button), () => desktop.mouseUp(button));
       await run.letGo(1);
@@ -356,7 +368,7 @@ async function chord(run: StepRun, ctx: BatchContext, combo: KeyCombo): Promise<
   }
 }
 
-async function drag(run: StepRun, ctx: BatchContext, from: Resolved, to: Resolved): Promise<void> {
+async function drag(run: StepRun, ctx: BatchContext, from: Aim, to: Aim): Promise<void> {
   const { desktop } = ctx;
   await run.input(() => desktop.moveTo(from.pointer));
   try {
@@ -385,18 +397,16 @@ async function runStep(step: Step, run: StepRun, ctx: BatchContext): Promise<Win
   switch (step.do) {
     case "click": {
       const resolved = await resolve(step.target, ctx);
-      await refusePointIntoT3(resolved, ctx);
       await settleBefore(resolved.window, ctx);
-      await click(run, ctx, resolved, step.button, step.count, step.mods);
+      await click(run, ctx, await resolved.aim(), step.button, step.count, step.mods);
       return resolved.window;
     }
     case "type": {
       let window: WindowFacts | null = null;
       if (step.target) {
         const resolved = await resolve(step.target, ctx);
-        await refusePointIntoT3(resolved, ctx);
         await settleBefore(resolved.window, ctx);
-        await click(run, ctx, resolved, "left", 1, []);
+        await click(run, ctx, await resolved.aim(), "left", 1, []);
         window = resolved.window;
       }
       await refuseKeysIntoT3(ctx);
@@ -419,19 +429,17 @@ async function runStep(step: Step, run: StepRun, ctx: BatchContext): Promise<Win
       return null;
     case "scroll": {
       const resolved = await resolve(step.target, ctx);
-      await refusePointIntoT3(resolved, ctx);
       await settleBefore(resolved.window, ctx);
-      for (let i = 0; i < Math.abs(step.dy); i++) await run.input(() => desktop.wheel(resolved.pointer, 0, Math.sign(step.dy)));
-      for (let i = 0; i < Math.abs(step.dx); i++) await run.input(() => desktop.wheel(resolved.pointer, Math.sign(step.dx), 0));
+      const { pointer } = await resolved.aim();
+      for (let i = 0; i < Math.abs(step.dy); i++) await run.input(() => desktop.wheel(pointer, 0, Math.sign(step.dy)));
+      for (let i = 0; i < Math.abs(step.dx); i++) await run.input(() => desktop.wheel(pointer, Math.sign(step.dx), 0));
       return resolved.window;
     }
     case "drag": {
       const from = await resolve(step.from, ctx);
       const to = await resolve(step.to, ctx);
-      await refusePointIntoT3(from, ctx);
-      await refusePointIntoT3(to, ctx);
       await settleBefore(from.window, ctx);
-      await drag(run, ctx, from, to);
+      await drag(run, ctx, await from.aim(), await to.aim());
       return to.window ?? from.window;
     }
     case "invoke":
@@ -594,6 +602,8 @@ export async function observe(
   const source: ShotSource | null =
     zoomSource ?? (request.scope === "screen" ? { kind: "screen" } : window ? { kind: "window", window: window.handle } : null);
 
+  const shotWindow = source?.kind === "window" && include.image ? source.window : null;
+  const boundsBefore = shotWindow ? await desktop.boundsNow(shotWindow) : null;
   const [shot, capture, windows] = await Promise.all([
     include.image && source ? desktop.screenshot(source, MAX_LONG_EDGE, crop) : null,
     request.outline && window ? desktop.capture(window.handle, CAPTURE) : null,
@@ -623,15 +633,18 @@ export async function observe(
   let frame: ImageFrame | null = null;
   let windowRef: Ref | null = outline?.window ?? null;
   if (shot && source) {
-    const shotWindow = source.kind === "window" ? source.window : null;
     if (shotWindow && !windowRef) {
       const facts = await desktop.windowOf(shotWindow);
       if (facts) [windowRef] = await ctx.refs.adopt([facts.key], [true], [facts.handle]);
     }
+    const steady = shotWindow !== null && sameBounds(boundsBefore, await desktop.boundsNow(shotWindow));
+    if (shotWindow && !steady) {
+      note = [note, "The window moved while it was captured. Observe again before you point into this image."].filter(Boolean).join(" ");
+    }
     frame = {
       ...shot,
       id: ctx.nextImageId(),
-      window: shotWindow ? { handle: shotWindow, bounds: await desktop.boundsNow(shotWindow) } : null,
+      window: shotWindow ? { handle: shotWindow, bounds: steady ? boundsBefore : null } : null,
     };
   }
   const of = request.zoom ? `zoom of ${ctx.latestImage!.id}` : source?.kind === "screen" ? "primary screen" : `window ${windowRef ?? "?"}`;

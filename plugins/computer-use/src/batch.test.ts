@@ -43,6 +43,8 @@ class FakeDesktop implements Desktop {
   beforeInput: (event: string) => void = () => {};
   /** Makes an input primitive reject after it was delivered. */
   failAfter: (event: string) => boolean = () => false;
+  onScreenshot: () => void = () => {};
+  firstSeen = 0;
   readonly elements = new Map<string, FakeElement>();
 
   constructor() {
@@ -72,7 +74,7 @@ class FakeDesktop implements Desktop {
       pid: w.pid,
       active: this.foregroundId === id,
       bounds: w.bounds,
-      firstSeen: 0,
+      firstSeen: this.firstSeen,
     };
   }
   private input(event: string): void {
@@ -134,6 +136,7 @@ class FakeDesktop implements Desktop {
     return { nodes, handles: members.map((e) => this.handle(e.id)), truncated: false };
   }
   async screenshot(source: ShotSource): Promise<Shot> {
+    this.onScreenshot();
     const b = source.kind === "window" ? this.el(source.window).bounds : { x: 0, y: 0, width: 1920, height: 1080 };
     // Half-size image of the window: image (x, y) is desktop (b.x + 2x, b.y + 2y).
     return {
@@ -410,6 +413,51 @@ describe("targets", () => {
     expect(text(stale)).toMatch(/i1 isn't the latest image \(i2\)\. Observe again\..*Nothing was sent/s);
     const outside = await act(agent, [{ do: "key", keys: "a" }, { do: "click", target: { x: 500, y: 20 } }]);
     expect(text(outside)).toMatch(/outside image i2/);
+    expect(desktop.events).toEqual([]);
+  });
+
+  it("refuses a point on a T3 Code window unless the image's own window is in front", async () => {
+    const { desktop, session } = rig();
+    const agent = session();
+    desktop.elements.get("w-app")!.bounds = { x: 100, y: 100, width: 400, height: 200 };
+    desktop.foregroundId = "w-other";
+    const app = /(w\d+) "Probe"/.exec(text(await agent.call("observe", {}, never)))![1]!;
+    await agent.call("observe", { win: app }, never);
+    expect(text(await act(agent, [{ do: "click", target: { x: 10, y: 20 } }]))).toMatch(/on a T3 Code window, which is off limits/);
+    expect(text(await act(agent, [{ do: "scroll", target: { x: 10, y: 20 }, dy: 1 }]))).toMatch(/off limits/);
+    expect(desktop.events).toEqual([]);
+
+    desktop.foregroundId = "w-app";
+    expect((await act(agent, [{ do: "click", target: { x: 10, y: 20 } }])).isError).toBe(false);
+    expect(desktop.events).toEqual(["move 120,140", "down left", "up left"]);
+
+    desktop.events.length = 0;
+    await agent.call("observe", { scope: "screen" }, never);
+    expect(text(await act(agent, [{ do: "click", target: { x: 60, y: 60 } }]))).toMatch(/off limits/);
+    const t3 = /(w\d+) "T3 Code"/.exec(text(await agent.call("observe", {}, never)))![1]!;
+    await agent.call("observe", { win: t3 }, never);
+    desktop.foregroundId = "w-t3";
+    expect(text(await act(agent, [{ do: "click", target: { x: 10, y: 10 } }]))).toMatch(/off limits/);
+    expect(desktop.events).toEqual([]);
+  });
+
+  it("checks the image's window right before the first primitive, after the settle wait", async () => {
+    const { desktop, session } = rig();
+    const agent = session();
+    await agent.call("observe", {}, never);
+    desktop.firstSeen = Date.now() + 150;
+    setTimeout(() => (desktop.elements.get("w-app")!.bounds = { x: 900, y: 100, width: 400, height: 200 }), 30);
+    expect(text(await act(agent, [{ do: "click", target: { x: 10, y: 20 } }]))).toMatch(/moved or closed since/);
+    expect(desktop.events).toEqual([]);
+  });
+
+  it("refuses points into an image whose window moved while it was captured", async () => {
+    const { desktop, session } = rig();
+    const agent = session();
+    desktop.onScreenshot = () => (desktop.elements.get("w-app")!.bounds = { x: 900, y: 100, width: 400, height: 200 });
+    expect(text(await agent.call("observe", {}, never))).toMatch(/moved while it was captured/);
+    desktop.onScreenshot = () => {};
+    expect(text(await act(agent, [{ do: "click", target: { x: 10, y: 20 } }]))).toMatch(/moved or closed since/);
     expect(desktop.events).toEqual([]);
   });
 

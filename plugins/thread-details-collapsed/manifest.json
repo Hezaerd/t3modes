@@ -1,0 +1,8 @@
+{
+  "id": "thread-details-collapsed",
+  "name": "Thread details collapsed by default",
+  "version": "1.0.0",
+  "description": "Closes the thread details card when you open a thread. Open it with T3 Code's own button whenever you need it.",
+  "author": "Hezaerd",
+  "api": 1
+}

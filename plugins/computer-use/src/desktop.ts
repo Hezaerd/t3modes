@@ -28,23 +28,23 @@ type Element = xa.Element;
 const el = (handle: ElementHandle): Element => handle as unknown as Element;
 const handle = (element: Element): ElementHandle => element as unknown as ElementHandle;
 
-const REASONS: Readonly<Record<string, StepFailure["reason"]>> = {
-  XA11Y_SELECTOR_NOT_MATCHED: "not_found",
-  XA11Y_ELEMENT_STALE: "stale",
-  XA11Y_ACTION_NOT_SUPPORTED: "not_supported",
-  XA11Y_TEXT_VALUE_NOT_SUPPORTED: "not_supported",
-  XA11Y_UNSUPPORTED: "not_supported",
-  XA11Y_INVALID_ACTION_DATA: "invalid",
-  XA11Y_NO_ELEMENT_BOUNDS: "invalid",
-  XA11Y_INVALID_SELECTOR: "invalid",
-  XA11Y_TIMEOUT: "timeout",
-};
+const REASONS: ReadonlyMap<string, StepFailure["reason"]> = new Map([
+  ["XA11Y_SELECTOR_NOT_MATCHED", "not_found"],
+  ["XA11Y_ELEMENT_STALE", "stale"],
+  ["XA11Y_ACTION_NOT_SUPPORTED", "not_supported"],
+  ["XA11Y_TEXT_VALUE_NOT_SUPPORTED", "not_supported"],
+  ["XA11Y_UNSUPPORTED", "not_supported"],
+  ["XA11Y_INVALID_ACTION_DATA", "invalid"],
+  ["XA11Y_NO_ELEMENT_BOUNDS", "invalid"],
+  ["XA11Y_INVALID_SELECTOR", "invalid"],
+  ["XA11Y_TIMEOUT", "timeout"],
+]);
 
 /** Maps an xa11y error to a step failure, keeping xa11y's own word on whether it was delivered. */
 const asStepError = (error: unknown): StepError => {
   if (error instanceof StepError) return error;
   const e = error as { code?: string; delivery?: string; message?: string; candidates?: string[] };
-  const reason = (e.code && REASONS[e.code]) || "platform";
+  const reason = (e.code && REASONS.get(e.code)) || "platform";
   const message = (e.message ?? String(error)).replace(/^XA11Y_[A-Z_]+:\s*/, "").split("\n")[0]!;
   return failure(reason, message, e.delivery === "not_delivered" ? "none" : "maybe", e.candidates ?? []);
 };

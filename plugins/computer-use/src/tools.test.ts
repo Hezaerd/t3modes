@@ -120,6 +120,16 @@ describe("parseKeys", () => {
     expect(parseKeys("hyper")).toMatch(/Unknown key/);
     expect(parseKeys("")).toMatch(/empty/);
   });
+
+  it("reads only its own key and modifier names, never inherited ones", () => {
+    expect(parseKeys("ctrl+__proto__")).toMatch(/Unknown key/);
+    expect(parseKeys("constructor")).toMatch(/Unknown key/);
+    expect(parseKeys("toString+a")).toMatch(/isn't a modifier/);
+    expect(error(act([{ do: "click", target: { ref: "e1" }, mods: ["__proto__"] }]))).toMatch(/unknown modifier/);
+    expect(error(act([{ do: "wait", timeout_ms: 1 }, { do: "click", target: { ref: "e1" }, mods: ["hasOwnProperty"] }]))).toMatch(
+      /Step 2 \(click\): unknown modifier/,
+    );
+  });
 });
 
 describe("TOOL_LIST", () => {

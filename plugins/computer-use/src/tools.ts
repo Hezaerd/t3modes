@@ -226,44 +226,44 @@ const parseTarget = (wire: TargetWire, what: string): Target => {
 const elementTarget = (target: Target, what: string): ElementTarget =>
   target.kind === "point" ? fail(`${what} must name an element (ref or sel), not a point.`) : target;
 
-const MODIFIERS: Readonly<Record<string, Modifier>> = {
-  ctrl: "Control",
-  control: "Control",
-  shift: "Shift",
-  alt: "Alt",
-  win: "Meta",
-  meta: "Meta",
-  super: "Meta",
-  cmd: "Meta",
-};
+const MODIFIERS: ReadonlyMap<string, Modifier> = new Map([
+  ["ctrl", "Control"],
+  ["control", "Control"],
+  ["shift", "Shift"],
+  ["alt", "Alt"],
+  ["win", "Meta"],
+  ["meta", "Meta"],
+  ["super", "Meta"],
+  ["cmd", "Meta"],
+]);
 
-const NAMED_KEYS: Readonly<Record<string, string>> = {
-  enter: "Enter",
-  return: "Enter",
-  esc: "Escape",
-  escape: "Escape",
-  tab: "Tab",
-  space: "Space",
-  backspace: "Backspace",
-  del: "Delete",
-  delete: "Delete",
-  ins: "Insert",
-  insert: "Insert",
-  home: "Home",
-  end: "End",
-  pgup: "PageUp",
-  pageup: "PageUp",
-  pgdn: "PageDown",
-  pagedown: "PageDown",
-  up: "ArrowUp",
-  arrowup: "ArrowUp",
-  down: "ArrowDown",
-  arrowdown: "ArrowDown",
-  left: "ArrowLeft",
-  arrowleft: "ArrowLeft",
-  right: "ArrowRight",
-  arrowright: "ArrowRight",
-};
+const NAMED_KEYS: ReadonlyMap<string, string> = new Map([
+  ["enter", "Enter"],
+  ["return", "Enter"],
+  ["esc", "Escape"],
+  ["escape", "Escape"],
+  ["tab", "Tab"],
+  ["space", "Space"],
+  ["backspace", "Backspace"],
+  ["del", "Delete"],
+  ["delete", "Delete"],
+  ["ins", "Insert"],
+  ["insert", "Insert"],
+  ["home", "Home"],
+  ["end", "End"],
+  ["pgup", "PageUp"],
+  ["pageup", "PageUp"],
+  ["pgdn", "PageDown"],
+  ["pagedown", "PageDown"],
+  ["up", "ArrowUp"],
+  ["arrowup", "ArrowUp"],
+  ["down", "ArrowDown"],
+  ["arrowdown", "ArrowDown"],
+  ["left", "ArrowLeft"],
+  ["arrowleft", "ArrowLeft"],
+  ["right", "ArrowRight"],
+  ["arrowright", "ArrowRight"],
+]);
 
 /** "ctrl+shift+s" → { key: "s", held: ["Control", "Shift"] }, in xa11y's key names. */
 export function parseKeys(text: string): KeyCombo | string {
@@ -278,14 +278,14 @@ export function parseKeys(text: string): KeyCombo | string {
   let key: string | null = null;
   for (const [i, name] of names.entries()) {
     const lower = name.toLowerCase();
-    const modifier = MODIFIERS[lower];
+    const modifier = MODIFIERS.get(lower);
     if (modifier && i < names.length - 1) {
       if (!held.includes(modifier)) held.push(modifier);
       continue;
     }
     if (i !== names.length - 1) return `"${name}" isn't a modifier; put the key last, as in ctrl+shift+s.`;
     if (modifier) key = modifier;
-    else if (NAMED_KEYS[lower]) key = NAMED_KEYS[lower]!;
+    else if (NAMED_KEYS.has(lower)) key = NAMED_KEYS.get(lower)!;
     else if (/^f([1-9]|1\d|2[0-4])$/.test(lower)) key = lower.toUpperCase();
     else if ([...name].length === 1) key = name.length === 1 && /[A-Z]/.test(name) ? lower : name;
     else return `Unknown key "${name}". Use names such as enter, esc, tab, f5, pgdn, left, or one character.`;
@@ -322,7 +322,7 @@ const parseStep = (wire: StepWire, n: number): Step => {
   switch (wire.do) {
     case "click": {
       const mods = (wire.mods ?? []).map(
-        (m) => MODIFIERS[m.toLowerCase()] ?? fail(`${at}: unknown modifier "${m}". Use ctrl, shift, alt or win.`),
+        (m) => MODIFIERS.get(m.toLowerCase()) ?? fail(`${at}: unknown modifier "${m}". Use ctrl, shift, alt or win.`),
       );
       return {
         do: "click",

@@ -49,9 +49,13 @@ export interface EngineIo {
   readonly timing?: Timing;
 }
 
+const AGENT_NAMES: ReadonlyMap<string, string> = new Map([
+  ["claude-code", "Claude"],
+  ["codex-mcp-client", "Codex"],
+]);
+
 export const labelFor = (client: ClientInfo): AgentLabel => {
-  const names: Record<string, string> = { "claude-code": "Claude", "codex-mcp-client": "Codex" };
-  const who = names[client.name] ?? (client.name || "An agent");
+  const who = AGENT_NAMES.get(client.name) ?? (client.name || "An agent");
   const where = client.cwd ? basename(client.cwd) : "";
   return (where ? `${who} · ${where}` : who) as AgentLabel;
 };

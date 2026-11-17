@@ -89,6 +89,7 @@ export interface Desktop {
   readonly t3codePid: number;
   windows(): Promise<ReadonlyArray<WindowFacts>>;
   foreground(): Promise<WindowFacts | null>;
+  foregroundPid(): Promise<number | null>;
   /** One attempt. scopePid null searches every app except T3 Code. */
   find(
     selector: string,
@@ -320,8 +321,7 @@ async function settleBefore(window: WindowFacts | null, ctx: BatchContext): Prom
 }
 
 async function refuseKeysIntoT3(ctx: BatchContext): Promise<void> {
-  const fg = await ctx.desktop.foreground();
-  if (fg && isOffLimits(ctx.desktop, fg.pid)) {
+  if (isOffLimits(ctx.desktop, await ctx.desktop.foregroundPid())) {
     throw failure(
       "off_limits",
       "Keyboard input refused: T3 Code is the active window. Activate the target window first (invoke activate on its w-ref, or click it).",
@@ -411,10 +411,10 @@ async function runStep(step: Step, run: StepRun, ctx: BatchContext): Promise<Win
         await click(run, ctx, await resolved.aim(), "left", 1, []);
         window = resolved.window;
       }
-      await refuseKeysIntoT3(ctx);
       const chars = graphemes(step.text);
       for (const [i, char] of chars.entries()) {
         try {
+          await refuseKeysIntoT3(ctx);
           await run.input(() => desktop.typeChar(char));
         } catch (error) {
           if (error instanceof StepError && i > 0) {
@@ -426,8 +426,10 @@ async function runStep(step: Step, run: StepRun, ctx: BatchContext): Promise<Win
       return window;
     }
     case "key":
-      await refuseKeysIntoT3(ctx);
-      for (let i = 0; i < step.repeat; i++) await chord(run, ctx, step.combo);
+      for (let i = 0; i < step.repeat; i++) {
+        await refuseKeysIntoT3(ctx);
+        await chord(run, ctx, step.combo);
+      }
       return null;
     case "scroll": {
       const resolved = await resolve(step.target, ctx);

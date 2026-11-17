@@ -89,6 +89,9 @@ class FakeDesktop implements Desktop {
   async foreground() {
     return this.facts(this.foregroundId);
   }
+  async foregroundPid() {
+    return this.elements.get(this.foregroundId)!.pid;
+  }
   async find(selector: string, scopePid: number | null) {
     this.finds.push({ selector, scopePid });
     const match = /^(\w+)\[name="(.+)"\]$/.exec(selector);
@@ -453,6 +456,26 @@ describe("targets", () => {
     desktop.foregroundId = "w-app";
     expect((await act(agent, [{ do: "click", target: { ref: save } }])).isError).toBe(false);
     expect(desktop.events).toEqual(["press save", "move save", "down left", "up left"]);
+  });
+
+  it("checks that T3 Code isn't in front before every character and every key repeat", async () => {
+    const { desktop, session } = rig();
+    const agent = session();
+    desktop.beforeInput = (event) => {
+      if (event === "type c") desktop.foregroundId = "w-t3";
+    };
+    const typed = await act(agent, [{ do: "type", text: "abcdef" }]);
+    expect(text(typed)).toMatch(/T3 Code is the active window.* 3 of 6 characters were typed\./);
+    expect(desktop.events).toEqual(["type a", "type b", "type c"]);
+
+    desktop.events.length = 0;
+    desktop.foregroundId = "w-app";
+    let ups = 0;
+    desktop.beforeInput = (event) => {
+      if (event === "keyup x" && ++ups === 2) desktop.foregroundId = "w-t3";
+    };
+    expect(text(await act(agent, [{ do: "key", keys: "x", repeat: 5 }]))).toMatch(/T3 Code is the active window/);
+    expect(desktop.events).toEqual(["keydown x", "keyup x", "keydown x", "keyup x"]);
   });
 
   it("checks the image's window right before the first primitive, after the settle wait", async () => {

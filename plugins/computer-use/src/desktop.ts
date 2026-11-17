@@ -173,6 +173,8 @@ export function loadDesktop(heldPath: string, log: (message: string) => void): D
       return active ? facts(active, app.name) : null;
     },
 
+    foregroundPid: async () => (await quiet(() => xa.App.foreground({ timeout: 0 }), null))?.pid ?? null,
+
     async find(selector, scopePid) {
       const locator = scopePid === null ? xa.locator(selector) : (await native(() => xa.App.byPid(scopePid, { timeout: 0 }))).locator(selector);
       const all = await quiet(() => locator.elements(), [] as Element[]);

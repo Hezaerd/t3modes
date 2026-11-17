@@ -4,7 +4,7 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && vp pack",
+    "build": "vp pack && node scripts/copy-native.mjs",
     "test": "vp test"
   },
   "devDependencies": {

@@ -36,12 +36,13 @@ describe("runRelay", () => {
       const stdin = new PassThrough();
       const stdout = new PassThrough();
       const exits: number[] = [];
-      runRelay({ home, supported: true, stdin, stdout, exit: (code) => exits.push(code) });
+      runRelay({ home, supported: true, title: async () => "Book a flight", stdin, stdout, exit: (code) => exits.push(code) });
       const send = (message: object) => stdin.write(JSON.stringify({ jsonrpc: "2.0", ...message }) + "\n");
       send({ id: 1, method: "initialize", params: { protocolVersion: "2025-06-18", capabilities: {}, clientInfo: { name: "test", version: "1" } } });
       send({ method: "notifications/initialized" });
       send({ id: 2, method: "tools/call", params: { name: "act", arguments: { steps: [] } } });
       await until(() => seen.some((f) => f.t === "call"), "the call to reach the backend");
+      expect(seen[0]).toMatchObject({ t: "hello", client: { name: "test", title: "Book a flight" } });
 
       stdin.end();
       await until(() => linkClosed && exits.length > 0, "the link to close and the relay to exit");

@@ -29,7 +29,7 @@ async function connectToServed(): Promise<{ socket: Socket; frames: ServerFrame[
   socket.on("data", (chunk) => frames.push(...(decoder.push(chunk) as ServerFrame[])));
   const closed = new Promise<void>((resolve) => socket.on("close", () => resolve()));
   await new Promise((resolve) => socket.once("connect", resolve));
-  socket.write(encodeFrame({ t: "hello", v: 1, client: { name: "test", version: "1", cwd: "", pid: 1 } }));
+  socket.write(encodeFrame({ t: "hello", v: 1, client: { name: "test", version: "1", cwd: "", pid: 1, title: "" } }));
   return { socket, frames, closed };
 }
 

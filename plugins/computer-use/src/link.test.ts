@@ -34,7 +34,7 @@ describe("pipeName", () => {
 
 describe("FrameDecoder", () => {
   const frames: ClientFrame[] = [
-    { t: "hello", v: 1, client: { name: "claude-code", version: "2", cwd: "D:\\src\\é", pid: 9 } },
+    { t: "hello", v: 1, client: { name: "claude-code", version: "2", cwd: "D:\\src\\é", pid: 9, title: "Fix the build" } },
     { t: "call", id: 1, tool: "act", args: { steps: [] } },
     { t: "cancel", id: 1 },
   ];
@@ -74,6 +74,12 @@ describe("FrameDecoder", () => {
     const decoder = new FrameDecoder(parseClientFrame, 1024);
     expect(decoder.push(new Uint8Array(1000).fill(0x20))).toEqual([]);
     expect(decoder.push(bytes)).toHaveProperty("error");
+  });
+
+  it("reads a hello from a tool server too old to send a title", () => {
+    const hello = { t: "hello", v: 1, client: { name: "codex-mcp-client", version: "1", cwd: "C:\\x", pid: 3 } };
+    expect(parseClientFrame(hello)).toEqual({ ...hello, client: { ...hello.client, title: "" } });
+    expect(parseClientFrame({ ...hello, client: { ...hello.client, title: 7 } })).toBeNull();
   });
 
   it("parses server frames", () => {

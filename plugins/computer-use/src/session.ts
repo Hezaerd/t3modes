@@ -53,7 +53,7 @@ const AGENT_NAMES: ReadonlyMap<string, string> = new Map([
 
 export const labelFor = (client: ClientInfo): AgentLabel => {
   const who = AGENT_NAMES.get(client.name) ?? (client.name || "An agent");
-  const where = client.cwd ? basename(client.cwd) : "";
+  const where = client.title.trim() || (client.cwd ? basename(client.cwd) : "");
   return (where ? `${who} · ${where}` : who) as AgentLabel;
 };
 

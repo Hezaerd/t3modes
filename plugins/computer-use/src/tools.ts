@@ -156,7 +156,7 @@ const ObserveWire = z.strictObject({
     .string()
     .optional()
     .describe('The window to look at: a w-ref ("w2"), or its title, exact or a unique part of it. Default: the window you last acted on, else the active one.'),
-  scope: z.enum(["window", "screen"]).optional().describe("window (default) or the whole primary screen."),
+  scope: z.enum(["window", "screen"]).optional().describe("window (default), or every display side by side in one image."),
   zoom: z
     .strictObject({ x: z.number(), y: z.number(), width: z.number(), height: z.number() })
     .optional()
@@ -626,7 +626,7 @@ const refusalText = (refusal: Refusal | { readonly kind: "invalid"; readonly mes
     case "stopped":
       return "The user stopped computer use. Ask them to press Resume in T3 Code. Don't retry until they say so.";
     case "no-indicator":
-      return "T3 Code isn't showing the computer-use indicator, so no input is allowed. Ask the user to check that T3 Code is open with the computer-use plugin on; don't retry in a loop.";
+      return "T3 Code couldn't show its computer-use indicator, so no input is allowed. Ask the user to check that T3 Code is open with the computer-use plugin on and an up-to-date t3mode; don't retry in a loop.";
     case "invalid":
       return `${refusal.message} Nothing was sent.`;
     case "dropped":

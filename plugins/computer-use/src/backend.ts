@@ -32,9 +32,12 @@ export default defineBackend({
     if (released) api.log("warn", `Released input a previous run held: ${JSON.stringify(released)}`);
 
     const desktop = loadDesktop(heldPath, (message) => api.log("info", message));
+    const indicator = api.indicator;
+    if (!indicator) api.log("warn", "Computer use needs t3mode with SDK 1.5 for the desktop indicator. Every act will be refused.");
     const engine = new Engine(
       {
         desktop,
+        indicator,
         now: Date.now,
         sendPage: (message) => api.send(message),
         persistStopped: (at) => writeFileSync(stoppedPath, JSON.stringify({ at })),

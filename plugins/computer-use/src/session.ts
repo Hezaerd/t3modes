@@ -27,7 +27,7 @@ import {
   transition,
   viewOf,
 } from "./control.ts";
-import type { BackendIndicator, DrivingIndicator } from "./indicator.ts";
+import type { BackendIndicator, DrivingIndicator } from "@t3mode/plugin-sdk";
 import type { ClientInfo } from "./link.ts";
 import { RefTable } from "./outline.ts";
 import { type ActRequest, type Outcome, type ToolResult, parseToolCall, pointProblem, refsOf, renderOutcome } from "./tools.ts";

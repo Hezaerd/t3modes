@@ -1,4 +1,4 @@
-import type { ScreenRect } from "./indicator.ts";
+import type { ScreenRect } from "@t3mode/plugin-sdk";
 import { type IdentityKey, type NodeFacts, RefTable, identityKeys, renderOutline } from "./outline.ts";
 import {
   type BatchReport,

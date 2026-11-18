@@ -13,7 +13,7 @@ import {
   desktopPoint,
 } from "./batch.ts";
 import { LEASE_IDLE_MS, type Control } from "./control.ts";
-import type { BackendIndicator, DrivingIndicator, IndicatorModel, ScreenRect } from "./indicator.ts";
+import type { BackendIndicator, DrivingIndicator, IndicatorModel, ScreenRect } from "@t3mode/plugin-sdk";
 import type { NodeFacts } from "./outline.ts";
 import { Engine, Session } from "./session.ts";
 import type { InvokeAction, MouseButton, ToolResult } from "./tools.ts";

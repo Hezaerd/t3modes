@@ -8,4 +8,4 @@ supportedArchitectures:
   cpu: [current, x64]
 
 minimumReleaseAgeExclude:
-  - '@t3mode/plugin-sdk@1.4.0'
+  - '@t3mode/plugin-sdk@1.5.0'
